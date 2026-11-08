@@ -164,7 +164,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private sealed interface Page { data object Home:Page; data class PlayerList(val teamId:Long,val back:Page = Home):Page; data class PlayerDetail(val teamId:Long,val playerId:Long,val back:Page):Page; data object GameForm:Page; data class GameDetail(val id:Long):Page; data class Record(val id:Long):Page; data class Score(val id:Long):Page }
+private sealed interface Page { data object Home:Page; data class PlayerList(val teamId:String,val back:Page = Home):Page; data class PlayerDetail(val teamId:String,val playerId:String,val back:Page):Page; data object GameForm:Page; data class GameDetail(val id:String):Page; data class Record(val id:String):Page; data class Score(val id:String):Page }
 private enum class PlayerSort(val code:String, val label:String) { First("first", "First name"), Last("last", "Last name"), Number("number", "Jersey number") }
 private fun savedPlayerSort(context:Context)=PlayerSort.entries.firstOrNull{it.code==context.getSharedPreferences("hoopreplay",Context.MODE_PRIVATE).getString("player_sort","number")}?:PlayerSort.Number
 private fun savePlayerSort(context:Context, sort:PlayerSort)=context.getSharedPreferences("hoopreplay",Context.MODE_PRIVATE).edit().putString("player_sort",sort.code).apply()
@@ -217,13 +217,13 @@ private val appleLogo:ImageVector by lazy {
         is Page.PlayerDetail -> db.teams().firstOrNull{it.id==p.teamId}?.let{team->db.players(team.id).firstOrNull{it.id==p.playerId}?.let{player->PlayerDetailScreen(db,team,player,onBack={page=p.back},onDeleted={page=p.back})}}
         Page.GameForm -> GameForm(db){page=Page.Home}
         is Page.GameDetail -> db.games().firstOrNull{it.id==p.id}?.let{game->GameDetailScreen(db,game,onBack={page=Page.Home},onRecord={page=Page.Record(game.id)},onScore={page=Page.Score(game.id)},onDeleted={page=Page.Home},onOpenTeam={page=Page.PlayerList(it,Page.GameDetail(game.id))})}
-        is Page.Record -> db.games().firstOrNull{it.id==p.id}?.let { RecorderScreen(db,it,onOpenTeam={teamId->page=Page.PlayerList(teamId,Page.Record(p.id))}){page=Page.GameDetail(p.id)} }
-        is Page.Score -> db.games().firstOrNull{it.id==p.id}?.let { RecorderScreen(db,it,scoreOnly=true,onOpenTeam={teamId->page=Page.PlayerList(teamId,Page.Score(p.id))}){page=Page.GameDetail(p.id)} }
+        is Page.Record -> db.games().firstOrNull{it.id==p.id&&it.ownerId==null}?.let { RecorderScreen(db,it,onOpenTeam={teamId->page=Page.PlayerList(teamId,Page.Record(p.id))}){page=Page.GameDetail(p.id)} }
+        is Page.Score -> db.games().firstOrNull{it.id==p.id&&it.ownerId==null}?.let { RecorderScreen(db,it,scoreOnly=true,onOpenTeam={teamId->page=Page.PlayerList(teamId,Page.Score(p.id))}){page=Page.GameDetail(p.id)} }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun MainShell(db:HoopDb,tab:HomeTab,language:AppLanguage,onLanguage:(AppLanguage)->Unit,playerSort:PlayerSort,onPlayerSort:(PlayerSort)->Unit,onTab:(HomeTab)->Unit,onGame:()->Unit,onOpen:(Long)->Unit,onOpenTeam:(Long)->Unit) {
+@Composable private fun MainShell(db:HoopDb,tab:HomeTab,language:AppLanguage,onLanguage:(AppLanguage)->Unit,playerSort:PlayerSort,onPlayerSort:(PlayerSort)->Unit,onTab:(HomeTab)->Unit,onGame:()->Unit,onOpen:(String)->Unit,onOpenTeam:(String)->Unit) {
     var refresh by remember { mutableIntStateOf(0) };var query by remember{mutableStateOf("")};var syncing by remember{mutableStateOf(false)};var syncMessage by remember{mutableStateOf<String?>(null)};var showAuth by remember{mutableStateOf(false)};var showAccount by remember{mutableStateOf(false)};var pendingDelete by remember{mutableStateOf<Game?>(null)};val context=LocalContext.current;var email by remember{mutableStateOf(HoopSync.signedInEmail(context))};var password by remember{mutableStateOf(HoopSync.rememberedPassword(context))};var passwordVisible by remember{mutableStateOf(false)};var signUp by remember{mutableStateOf(false)};var signedIn by remember{mutableStateOf(HoopSync.isSignedIn(context))};val scope=rememberCoroutineScope();val games=remember(refresh){db.games()}; val teams=remember(refresh){db.teams()};val playerCount=remember(refresh){teams.sumOf{db.players(it.id).size}};val shown=remember(games,query){val q=query.trim();if(q.isEmpty())games else games.filter{it.title.contains(q,true)||it.homeName.contains(q,true)||it.awayName.contains(q,true)}}
     var languageMenuOpen by remember { mutableStateOf(false) }
     var playerSortMenuOpen by remember { mutableStateOf(false) }
@@ -253,6 +253,16 @@ private val appleLogo:ImageVector by lazy {
             syncing=false
         }
     }
+    // Sign-out uploads first, then forgets the account and its games so the next account starts empty.
+    val signOut:()->Unit={
+        scope.launch{
+            syncing=true
+            val uploaded=HoopSync.signOut(context,db)
+            signedIn=false;email="";password="";passwordVisible=false;refresh++
+            syncMessage=if(uploaded)"Signed out" else "Signed out. Games that could not be uploaded stay on this device until this account signs in again"
+            syncing=false
+        }
+    }
     Box(Modifier.fillMaxSize()) {
     Scaffold(
         topBar={TopAppBar(title={Text("HoopReplay")},actions={
@@ -267,7 +277,7 @@ private val appleLogo:ImageVector by lazy {
                     DropdownMenuItem(text={Text(t("Account settings"))},leadingIcon={Icon(Icons.Filled.Person,null)},trailingIcon={Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight,null)},onClick={showAccount=false;onTab(HomeTab.Settings)})
                     DropdownMenuItem(text={Text(t("Sync status"))},leadingIcon={Icon(Icons.Filled.CloudQueue,null)},trailingIcon={Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight,null)},onClick={showAccount=false;onTab(HomeTab.Settings)})
                     HorizontalDivider()
-                    DropdownMenuItem(text={Text(t("Sign out"),color=MaterialTheme.colorScheme.error)},leadingIcon={Icon(Icons.AutoMirrored.Filled.Logout,null,tint=MaterialTheme.colorScheme.error)},onClick={showAccount=false;HoopSync.signOut(context);signedIn=false;syncMessage="Signed out"})
+                    DropdownMenuItem(text={Text(t("Sign out"),color=MaterialTheme.colorScheme.error)},leadingIcon={Icon(Icons.AutoMirrored.Filled.Logout,null,tint=MaterialTheme.colorScheme.error)},onClick={showAccount=false;signOut()})
                 }
             } else TextButton(onClick={showAuth=true}){Text(t("Sign in"),color=Orange)}
         })},
@@ -389,7 +399,7 @@ private val appleLogo:ImageVector by lazy {
                         Spacer(Modifier.height(12.dp))
                         Card(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
                             Text(t("Account actions"),color=SecondaryText,style=MaterialTheme.typography.labelMedium)
-                            Button(onClick={HoopSync.signOut(context);signedIn=false;syncMessage="Signed out"},colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error,contentColor=Color.White)){Text(t("Sign out"),maxLines=1)}
+                            Button(enabled=!syncing,onClick={signOut()},colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error,contentColor=Color.White)){Text(t("Sign out"),maxLines=1)}
                         }}
                     }
                     Spacer(Modifier.height(12.dp))
@@ -463,7 +473,7 @@ private fun setStatsFullscreen(context:Context,view:android.view.View,enabled:Bo
     view.systemUiVisibility=if(enabled) android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY else 0
 }
 
-@Composable private fun ColumnScope.TeamsTab(db:HoopDb,refresh:Int,onChanged:()->Unit,onOpen:(Long)->Unit) {
+@Composable private fun ColumnScope.TeamsTab(db:HoopDb,refresh:Int,onChanged:()->Unit,onOpen:(String)->Unit) {
     var query by remember{mutableStateOf("")};var newName by remember{mutableStateOf("")};var showAdd by remember{mutableStateOf(false)}
     val teams=remember(refresh){db.teams()};val shown=remember(teams,query){teams.filter{it.name.contains(query.trim(),ignoreCase=true)}}
     Spacer(Modifier.height(12.dp))
@@ -486,7 +496,7 @@ private fun setStatsFullscreen(context:Context,view:android.view.View,enabled:Bo
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun GameDetailScreen(db:HoopDb,initialGame:Game,onBack:()->Unit,onRecord:()->Unit,onScore:()->Unit,onDeleted:()->Unit,onOpenTeam:(Long)->Unit){
+@Composable private fun GameDetailScreen(db:HoopDb,initialGame:Game,onBack:()->Unit,onRecord:()->Unit,onScore:()->Unit,onDeleted:()->Unit,onOpenTeam:(String)->Unit){
     val context=LocalContext.current
     val view=LocalView.current
     val scope=rememberCoroutineScope()
@@ -512,6 +522,8 @@ private fun setStatsFullscreen(context:Context,view:android.view.View,enabled:Bo
     DisposableEffect(Unit){onDispose{if(immersive)setStatsFullscreen(context,view,false,baseOrientation)}}
     val game=remember(tick,initialGame){db.games().firstOrNull{it.id==initialGame.id}?:initialGame}
     val events=remember(tick,game.id){db.events(game.id).filterNot{it.reverted}}
+    // A game shared by another account is a read-only copy: its changes would never upload.
+    val viewOnly=game.ownerId!=null
     LaunchedEffect(game.id,events){db.recalculateScore(game.id);db.recalculatePlayerGameStats(game);tick++}
     Scaffold(topBar={if(!immersive)TopAppBar(title={Text(t("Game details"))},navigationIcon={BackButton(onBack)})}){pad->
         Column(Modifier.padding(pad).fillMaxSize().padding(horizontal=20.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
@@ -519,6 +531,7 @@ private fun setStatsFullscreen(context:Context,view:android.view.View,enabled:Bo
                 Column(Modifier.fillMaxWidth()){
                     Text(game.title,style=MaterialTheme.typography.headlineSmall)
                     Text("${formatGameDateTime(game.scheduledAt)} · ${t(statusLabel(game.status))}",color=Orange,style=MaterialTheme.typography.bodyMedium)
+                    if(viewOnly)Text(t("View Only"),color=SecondaryText,style=MaterialTheme.typography.labelMedium)
                 }
                 Card(Modifier.fillMaxWidth()){
                     Row(Modifier.fillMaxWidth().padding(horizontal=14.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){
@@ -561,10 +574,11 @@ private fun setStatsFullscreen(context:Context,view:android.view.View,enabled:Bo
                     if(selectedTeam==0)TeamStats(db,game.homeId,events,game.id,fitScreen=true,visibleColumns=visibleColumns,sortKey=statSortKey,sortAscending=statSortAscending) else TeamStats(db,game.awayId,events,game.id,fitScreen=true,visibleColumns=visibleColumns,sortKey=statSortKey,sortAscending=statSortAscending)
                 }
             }else{
-                EventTimeline(db,game,events,Modifier.fillMaxWidth().weight(1f),onOpenTeam,editable=true,onChanged={tick++})
+                EventTimeline(db,game,events,Modifier.fillMaxWidth().weight(1f),onOpenTeam,editable=!viewOnly,onChanged={tick++})
             }
             // Five actions share the row, so the padding shrinks and the labels never wrap.
-            if(!immersive)Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+            if(!immersive&&viewOnly)OutlinedButton(onClick={exporting=true},modifier=Modifier.fillMaxWidth().height(48.dp)){Text(t("Export"),maxLines=1,softWrap=false)}
+            if(!immersive&&!viewOnly)Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){
                 val actionPadding=PaddingValues(horizontal=4.dp)
                 Button(
                     onClick={deleting=true},
@@ -649,7 +663,7 @@ private sealed interface HighlightState {
     var footage by remember{mutableStateOf<Pair<Int,Int>?>(null)}
     var footageProgress by remember{mutableStateOf<String?>(null)}
     val signedIn=remember{HoopSync.isSignedIn(context)}
-    LaunchedEffect(game.id,signedIn){if(signedIn)footage=runCatching{VideoUpload.footageStatus(context,db,game.id)}.getOrNull()}
+    LaunchedEffect(game.id,signedIn){if(signedIn&&game.ownerId==null)footage=runCatching{VideoUpload.footageStatus(context,db,game.id)}.getOrNull()}
     fun uploadHighlight(result:HighlightResult,targetKey:String,label:String){
         if(!signedIn){uploadMessage=t("Sign in to share highlights on HoopReplay Web");return}
         lastUpload={uploadHighlight(result,targetKey,label)}
@@ -710,7 +724,7 @@ private sealed interface HighlightState {
                                 }
                             }
                         }
-                        if(signedIn)Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){
+                        if(signedIn&&game.ownerId==null)Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){
                             Text(footageProgress?:footage?.let{(up,all)->t("Recordings in the cloud: {uploaded} of {total}","uploaded" to up,"total" to all)}?:t("Checking recordings…"),Modifier.weight(1f),color=SecondaryText,style=MaterialTheme.typography.bodyMedium)
                             OutlinedButton(enabled=footageProgress?.startsWith(t("Uploading recordings…"))!=true&&footage?.let{it.first<it.second}==true,onClick={uploadFootage()}){Text(t("Upload Recordings"),maxLines=1,softWrap=false)}
                         }
@@ -831,7 +845,7 @@ private data class TimelineHeader(val period:Int,val plays:Int,val awayScore:Int
     }
 }
 
-@Composable private fun EventTimeline(db:HoopDb,game:Game,events:List<StatEvent>,modifier:Modifier=Modifier,onOpenTeam:(Long)->Unit={},editable:Boolean=false,autoScrollToLatest:Boolean=false,showTeamHeader:Boolean=true,filter:PlayFilter=PlayFilter.ALL,onChanged:()->Unit={}){
+@Composable private fun EventTimeline(db:HoopDb,game:Game,events:List<StatEvent>,modifier:Modifier=Modifier,onOpenTeam:(String)->Unit={},editable:Boolean=false,autoScrollToLatest:Boolean=false,showTeamHeader:Boolean=true,filter:PlayFilter=PlayFilter.ALL,onChanged:()->Unit={}){
     // Keyed on events too: a play can be reassigned to a player created from the edit panel, and a
     // roster cached only per game would still render that play as unassigned.
     val players=remember(game.id,events){(db.players(game.homeId)+db.players(game.awayId)).associateBy{it.id}}
@@ -992,7 +1006,7 @@ private data class TimelineHeader(val period:Int,val plays:Int,val awayScore:Int
  * Android — tapping a play only dismissed the Plays dialog, so plays could not be edited there at all.
  */
 @OptIn(ExperimentalLayoutApi::class)
-@Composable private fun EditPlayPanel(db:HoopDb,event:StatEvent,periodDurationMs:Long,periodCount:Int,roster:List<Player>,onDismiss:()->Unit,onDelete:()->Unit,onSave:(Long?,Int,Long)->Unit){
+@Composable private fun EditPlayPanel(db:HoopDb,event:StatEvent,periodDurationMs:Long,periodCount:Int,roster:List<Player>,onDismiss:()->Unit,onDelete:()->Unit,onSave:(String?,Int,Long)->Unit){
     var playerId by remember(event.id){mutableStateOf(event.playerId)}
     var selectedPeriod by remember(event.id){mutableIntStateOf(event.period)}
     var selectedMinute by remember(event.id){mutableIntStateOf((event.gameClockMs/60000).toInt())}
@@ -1063,7 +1077,8 @@ private fun playerGridSlots(players:List<Player>):List<List<Player>> {
         Column(Modifier.padding(pad).padding(16.dp).fillMaxSize(),verticalArrangement=Arrangement.spacedBy(16.dp)){
             Card(Modifier.fillMaxWidth()){Column(Modifier.padding(24.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text(current.name.ifBlank{t("Player #{number}","number" to current.number)},style=MaterialTheme.typography.headlineSmall);Text(t("Jersey {number}","number" to current.number.ifBlank{t("Not set")}),color=SecondaryText);Text(team.name,color=SecondaryText)}}
             Spacer(Modifier.weight(1f))
-            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)){
+            if(team.ownerId!=null)Text(t("View Only"),color=SecondaryText,style=MaterialTheme.typography.labelMedium)
+            else Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)){
                 Button(onClick={deleting=true},modifier=Modifier.weight(1f).height(48.dp),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error,contentColor=Color.White)){Text(t("Delete"),maxLines=1)}
                 Button(onClick={editFirst=firstNameOf(current.name);editLast=lastNameOf(current.name);editNumber=current.number;editing=true},modifier=Modifier.weight(1f).height(48.dp)){Text(t("Edit"),maxLines=1)}
             }
@@ -1079,11 +1094,12 @@ private fun playerGridSlots(players:List<Player>):List<List<Player>> {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Suppress("OPT_IN_USAGE")
-@Composable private fun PlayerListScreen(db:HoopDb,team:Team,onBack:()->Unit,onTeamDeleted:()->Unit,onPlayer:(Long)->Unit){
+@Composable private fun PlayerListScreen(db:HoopDb,team:Team,onBack:()->Unit,onTeamDeleted:()->Unit,onPlayer:(String)->Unit){
     var query by remember{mutableStateOf("")};var first by remember{mutableStateOf("")};var last by remember{mutableStateOf("")};var number by remember{mutableStateOf("")};var showAdd by remember{mutableStateOf(false)};var deleting by remember{mutableStateOf<Player?>(null)};var deletingTeam by remember{mutableStateOf(false)};var message by remember{mutableStateOf<String?>(null)};var tick by remember{mutableIntStateOf(0)}
     val players=remember(tick){db.players(team.id)};val shown=remember(players,query){val q=query.trim();rosterOrder(players.filter{it.name.contains(q,true)||it.number.contains(q,true)})}
     Scaffold(topBar={TopAppBar(title={Text(team.name)},navigationIcon={BackButton(onBack)},actions={
-        Row(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment=Alignment.CenterVertically,modifier=Modifier.padding(end=12.dp)){
+        if(team.ownerId!=null)Text(t("View Only"),color=SecondaryText,style=MaterialTheme.typography.labelMedium,modifier=Modifier.padding(end=16.dp))
+        else Row(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment=Alignment.CenterVertically,modifier=Modifier.padding(end=12.dp)){
             Button(onClick={deletingTeam=true},contentPadding=PaddingValues(horizontal=12.dp,vertical=6.dp),colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error,contentColor=Color.White)){Text(t("Delete team"),maxLines=1)}
             Button(onClick={showAdd=true},contentPadding=PaddingValues(horizontal=16.dp,vertical=6.dp),colors=ButtonDefaults.buttonColors(containerColor=Orange,contentColor=Color.White)){Text(t("Add player"),maxLines=1)}
         }
@@ -1159,7 +1175,7 @@ private fun VideoQualityField(selected:String,expanded:Boolean,onExpanded:(Boole
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun GameForm(db:HoopDb,onDone:()->Unit){
     val context=LocalContext.current
-    val teams=remember{db.teams().sortedBy{it.name.lowercase()}}
+    val teams=remember{db.teams().filter{it.ownerId==null}.sortedBy{it.name.lowercase()}}
     var home by remember{mutableStateOf(teams.firstOrNull())}
     var away by remember{mutableStateOf(teams.firstOrNull{it.id!=home?.id})}
     var homeOpen by remember{mutableStateOf(false)}
@@ -1275,7 +1291,7 @@ private fun lowStorage(context:Context):Boolean=try{
  * Publishing the pending file and backfilling the segment keeps the footage instead of losing it.
  * Returns the total recovered duration in milliseconds.
  */
-private fun recoverPendingRecordings(context:Context,db:HoopDb,gameId:Long):Long{
+private fun recoverPendingRecordings(context:Context,db:HoopDb,gameId:String):Long{
     val orphans=db.orphanSegments(gameId)
     if(orphans.isEmpty())return 0L
     val resolver=context.contentResolver
@@ -1329,8 +1345,8 @@ private fun videoQualitySelector(value:String):QualitySelector=when(value){
     else->QualitySelector.from(Quality.HIGHEST)
 }
 
-private class CameraSession(private val activity:ComponentActivity,private val db:HoopDb,private val gameId:Long,private var videoQuality:String){var capture:VideoCapture<Recorder>?=null;var recording:Recording?=null;var sequence=0;var segmentStarted=0L;var completedMs=0L;@Volatile var recordedMs=0L;private val homeTeamId=db.games().first{it.id==gameId}.homeId;private var stopState="PAUSED";@Volatile private var overlayClockMs=0L;@Volatile private var overlayPeriod=1;@Volatile private var overlayPeriodCount=4;@Volatile private var overlayHomeName="Home";@Volatile private var overlayAwayName="Away";@Volatile private var overlayHomeScore=0;@Volatile private var overlayAwayScore=0
-    private var currentSegmentId:Long?=null
+private class CameraSession(private val activity:ComponentActivity,private val db:HoopDb,private val gameId:String,private var videoQuality:String){var capture:VideoCapture<Recorder>?=null;var recording:Recording?=null;var sequence=0;var segmentStarted=0L;var completedMs=0L;@Volatile var recordedMs=0L;private val homeTeamId=db.games().first{it.id==gameId}.homeId;private var stopState="PAUSED";@Volatile private var overlayClockMs=0L;@Volatile private var overlayPeriod=1;@Volatile private var overlayPeriodCount=4;@Volatile private var overlayHomeName="Home";@Volatile private var overlayAwayName="Away";@Volatile private var overlayHomeScore=0;@Volatile private var overlayAwayScore=0
+    private var currentSegmentId:String?=null
     private var camera:androidx.camera.core.Camera?=null
     private var previewView:PreviewView?=null
     private var zoomRatio=1f
@@ -1396,7 +1412,7 @@ private class CameraSession(private val activity:ComponentActivity,private val d
     fun close(){restoreNotifications();try{cameraProvider?.unbindAll()}catch(e:Exception){};overlay.close();overlayThread.quitSafely()}
 }
 
-@Composable private fun RecorderScreen(db:HoopDb,initial:Game,scoreOnly:Boolean=false,onOpenTeam:(Long)->Unit,onDone:()->Unit){
+@Composable private fun RecorderScreen(db:HoopDb,initial:Game,scoreOnly:Boolean=false,onOpenTeam:(String)->Unit,onDone:()->Unit){
     val context=LocalContext.current; val activity=context as ComponentActivity
     DisposableEffect(Unit){
         activity.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -1409,7 +1425,7 @@ private class CameraSession(private val activity:ComponentActivity,private val d
     // clock paused and the capture off; READY and COMPLETED map onto themselves.
     // The recorder always opens idle: every recording is its own session and file, and the game's
     // stored status only matters for what Stop writes back (a COMPLETED game stays COMPLETED).
-    val lastPlayClock=remember(initial.id,initial.currentPeriod){db.events(initial.id).filter{it.period==initial.currentPeriod&&!it.reverted&&it.type!="STARTER"&&it.type!="VIDEO"}.maxByOrNull{it.id}?.gameClockMs}
+    val lastPlayClock=remember(initial.id,initial.currentPeriod){db.events(initial.id).filter{it.period==initial.currentPeriod&&!it.reverted&&it.type!="STARTER"&&it.type!="VIDEO"}.lastOrNull()?.gameClockMs}
     val restoredClock=lastPlayClock?.let{minOf(initial.clockRemainingMs,it)}?:initial.clockRemainingMs
     var game by remember{mutableStateOf(initial)};var state by remember{mutableStateOf(RecorderState.IDLE)};var clockMs by remember{mutableLongStateOf(restoredClock)};var period by remember{mutableIntStateOf(initial.currentPeriod)};var tick by remember{mutableIntStateOf(0)}
     val wasCompleted=remember{initial.status=="COMPLETED"}
@@ -1430,15 +1446,15 @@ private class CameraSession(private val activity:ComponentActivity,private val d
     // is assigned; the attempts are held here until then so they are written in play order.
     var freeThrowRebound by remember{mutableStateOf<Pair<FreeThrowFlow,List<Boolean>>?>(null)}
     var foul by remember{mutableStateOf<FoulFlow?>(null)}
-    var substitution by remember{mutableStateOf<Long?>(null)}
-    var starterTeamId by remember{mutableStateOf<Long?>(null)}
+    var substitution by remember{mutableStateOf<String?>(null)}
+    var starterTeamId by remember{mutableStateOf<String?>(null)}
     // Replay the lineup events to see who is on the floor. Treating "every player with a recorded
     // stat" as the lineup never took anyone off it, so a team could show more than five players.
-    fun lineupsFromEvents():Pair<Set<Long>,Set<Long>>{
+    fun lineupsFromEvents():Pair<Set<String>,Set<String>>{
         val recorded=db.events(game.id).filterNot{it.reverted}
-        fun lineupOf(teamId:Long):Set<Long>{
+        fun lineupOf(teamId:String):Set<String>{
             val roster=db.players(teamId).map{it.id}.toSet()
-            val onCourt=LinkedHashSet<Long>()
+            val onCourt=LinkedHashSet<String>()
             recorded.filter{it.teamId==teamId}.forEach{event->
                 val playerId=event.playerId
                 if(playerId==null||playerId !in roster)return@forEach
@@ -1462,7 +1478,7 @@ private class CameraSession(private val activity:ComponentActivity,private val d
     val scope=rememberCoroutineScope()
     var qualityOpen by remember{mutableStateOf(false)}
     var fullStats by remember{mutableStateOf(true)}
-    var addPlayerTeamId by remember{mutableStateOf<Long?>(null)}
+    var addPlayerTeamId by remember{mutableStateOf<String?>(null)}
     val session=remember{CameraSession(activity,db,game.id,game.videoQuality)}
     SideEffect{session.onCameraReady={cameraReady=true}}
     SideEffect{session.updateClock(period,game.periodCount,clockMs);session.updateScoreboard(game.homeName,game.homeScore,game.awayName,game.awayScore)}
@@ -1493,7 +1509,7 @@ private class CameraSession(private val activity:ComponentActivity,private val d
         }
     }
     fun reload(){db.recalculateScore(game.id);game=db.games().first{it.id==game.id};tick++}
-    fun event(team:Long,player:Player?,type:String,value:Int,points:Int=0){
+    fun event(team:String,player:Player?,type:String,value:Int,points:Int=0){
         // A STARTER can only happen at the start of a period, so it is stamped with the period's
         // full clock no matter when the lineup is confirmed. A stat never creates a STARTER: a
         // player's presence on the floor comes only from recorded lineup events.
@@ -1520,7 +1536,7 @@ private class CameraSession(private val activity:ComponentActivity,private val d
         if(!wasCompleted&&game.status=="RECORDING")db.status(game.id,"PAUSED")
         db.saveProgress(game.id,period,clockMs)
     }
-    fun leaveToTeam(teamId:Long){
+    fun leaveToTeam(teamId:String){
         if(state!=RecorderState.IDLE&&state!=RecorderState.ERROR){showStopFirst=true;return}
         leaveRecorder();onOpenTeam(teamId)
     }
@@ -1856,9 +1872,9 @@ private class CameraSession(private val activity:ComponentActivity,private val d
     )
 }
 
-private data class PlayerAction(val teamId:Long,val type:String,val value:Int,val points:Int=0,val needsAssist:Boolean=false,val needsRebound:Boolean=false)
-private data class FreeThrowFlow(val teamId:Long,val player:Player?=null,val playerSkipped:Boolean=false,val stage:String="PLAYER",val format:String="",val attempt:Int=1,val total:Int=2,val results:List<Boolean?> = emptyList())
-private data class FoulFlow(val teamId:Long,val player:Player?=null,val playerSkipped:Boolean=false)
+private data class PlayerAction(val teamId:String,val type:String,val value:Int,val points:Int=0,val needsAssist:Boolean=false,val needsRebound:Boolean=false)
+private data class FreeThrowFlow(val teamId:String,val player:Player?=null,val playerSkipped:Boolean=false,val stage:String="PLAYER",val format:String="",val attempt:Int=1,val total:Int=2,val results:List<Boolean?> = emptyList())
+private data class FoulFlow(val teamId:String,val player:Player?=null,val playerSkipped:Boolean=false)
 
 @Composable private fun ClockEditorDialog(initialMs:Long,maxMs:Long,initialPeriod:Int,periodCount:Int,onDismiss:()->Unit,onConfirm:(Int,Long)->Unit){
     var selectedPeriod by remember { mutableIntStateOf(initialPeriod) }
@@ -1969,7 +1985,7 @@ private data class FoulFlow(val teamId:Long,val player:Player?=null,val playerSk
 
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable private fun StarterSelectionDialog(db:HoopDb,teamId:Long,players:List<Player>,initial:Set<Long>,onConfirm:(Set<Long>)->Unit,onDismiss:()->Unit,title:String="Set Starting Lineup",hint:String="Tap players to switch starters and substitutes",selectedLabel:String="Starter",unselectedLabel:String="Substitute",confirmLabel:String="Confirm"){
+@Composable private fun StarterSelectionDialog(db:HoopDb,teamId:String,players:List<Player>,initial:Set<String>,onConfirm:(Set<String>)->Unit,onDismiss:()->Unit,title:String="Set Starting Lineup",hint:String="Tap players to switch starters and substitutes",selectedLabel:String="Starter",unselectedLabel:String="Substitute",confirmLabel:String="Confirm"){
     var selected by remember(teamId,initial){mutableStateOf(initial)}
     var localPlayers by remember(teamId){mutableStateOf(players)}
     var otherNumber by remember{mutableStateOf("")}
@@ -2052,7 +2068,7 @@ private data class FoulFlow(val teamId:Long,val player:Player?=null,val playerSk
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable private fun PlayerChoiceDialog(db:HoopDb,teamId:Long,title:String,players:List<Player>,showNone:Boolean,onPlayer:(Player)->Unit,onNone:()->Unit,onDismiss:()->Unit,noneLabel:String=t("No assist"),context:String?=null,highlighted:Set<Long> =emptySet(),onBack:(()->Unit)?=null){
+@Composable private fun PlayerChoiceDialog(db:HoopDb,teamId:String,title:String,players:List<Player>,showNone:Boolean,onPlayer:(Player)->Unit,onNone:()->Unit,onDismiss:()->Unit,noneLabel:String=t("No assist"),context:String?=null,highlighted:Set<String> =emptySet(),onBack:(()->Unit)?=null){
     var otherNumber by remember{mutableStateOf("")}
     var otherFirstName by remember{mutableStateOf("")}
     var otherLastName by remember{mutableStateOf("")}
@@ -2061,7 +2077,7 @@ private data class FoulFlow(val teamId:Long,val player:Player?=null,val playerSk
     // The caller's list is a snapshot, so roster edits made through the number pad are tracked
     // here to show up in the grid immediately after the pad closes.
     var extraPlayers by remember{mutableStateOf(listOf<Player>())}
-    var removedIds by remember{mutableStateOf(setOf<Long>())}
+    var removedIds by remember{mutableStateOf(setOf<String>())}
     val gridPlayers=remember(players,extraPlayers,removedIds){rosterOrder((players+extraPlayers.filter{extra->players.none{it.id==extra.id}}).filter{it.id !in removedIds})}
     fun updateActive(transform:(String)->String){
         when(activeField){
@@ -2161,7 +2177,7 @@ private data class FoulFlow(val teamId:Long,val player:Player?=null,val playerSk
  * play); tapping a highlighted number removes the player again and keeps the pad open for more
  * changes — unless they already have recorded stats, which keeps them and shows a toast.
  */
-@Composable private fun NumberPickPanel(db:HoopDb,teamId:Long,onAdded:(Player)->Unit,onRemoved:(Long)->Unit,onCancel:(()->Unit)?=null){
+@Composable private fun NumberPickPanel(db:HoopDb,teamId:String,onAdded:(Player)->Unit,onRemoved:(String)->Unit,onCancel:(()->Unit)?=null){
     val context=LocalContext.current
     var version by remember{mutableIntStateOf(0)}
     val roster=remember(version){db.players(teamId)}
@@ -2308,7 +2324,7 @@ private const val NumberPadMarginFraction=0.025f
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable private fun ReboundChoiceDialog(db:HoopDb,homeName:String,awayName:String,awayTeamId:Long,shootingTeamId:Long,homeTeamId:Long,onPlayer:(Player)->Unit,onNone:()->Unit,onDismiss:()->Unit){
+@Composable private fun ReboundChoiceDialog(db:HoopDb,homeName:String,awayName:String,awayTeamId:String,shootingTeamId:String,homeTeamId:String,onPlayer:(Player)->Unit,onNone:()->Unit,onDismiss:()->Unit){
     // One team at a time behind a tab, with the new player added right here instead of in a second dialog.
     var teamId by remember{mutableStateOf(shootingTeamId)}
     var version by remember{mutableIntStateOf(0)}
@@ -2436,7 +2452,7 @@ private const val NumberPadMarginFraction=0.025f
  * 全屏 0-99 号码盘：高亮的号码就是球队名单里的球员，点击可选中/取消选中。
  * 选中的号码会立刻写入球队名单，之后出现在各个球员选择列表里。
  */
-@Composable private fun RosterNumbersOverlay(db:HoopDb,teamId:Long,teamName:String,onDismiss:()->Unit){
+@Composable private fun RosterNumbersOverlay(db:HoopDb,teamId:String,teamName:String,onDismiss:()->Unit){
     val context=LocalContext.current
     var version by remember{mutableIntStateOf(0)}
     var nameMode by remember{mutableStateOf(false)}
@@ -2526,9 +2542,9 @@ private fun firstNameOf(name:String)=name.trim().substringBefore(' ').trim()
 private fun lastNameOf(name:String)=name.trim().substringAfter(' ',"").trim()
 private fun fullName(first:String,last:String)=listOf(first.trim(),last.trim()).filter{it.isNotBlank()}.joinToString(" ")
 
-private data class RosterFocus(val playerId:Long?,val field:String)
+private data class RosterFocus(val playerId:String?,val field:String)
 
-@Composable private fun RosterNameEditor(db:HoopDb,teamId:Long,roster:List<Player>,modifier:Modifier=Modifier,onChanged:()->Unit){
+@Composable private fun RosterNameEditor(db:HoopDb,teamId:String,roster:List<Player>,modifier:Modifier=Modifier,onChanged:()->Unit){
     val context=LocalContext.current
     var focus by remember{mutableStateOf<RosterFocus?>(null)}
     var newNumber by remember{mutableStateOf("")}
@@ -2721,7 +2737,7 @@ private val STAT_COLUMNS=listOf("MIN","PTS","+/-","FGM","FGA","FG%","3PM","3PA",
     AlertDialog(onDismissRequest=onDismiss,title={Text(t("Select columns"))},text={Column(Modifier.verticalScroll(rememberScrollState())){STAT_COLUMNS.forEach{c->Row(Modifier.fillMaxWidth().clickable{draft=if(c.key in draft)draft-c.key else draft+c.key},verticalAlignment=Alignment.CenterVertically){Checkbox(c.key in draft,{draft=if(it)draft+c.key else draft-c.key});Text(c.label)}}}},confirmButton={TextButton(enabled=draft.isNotEmpty(),onClick={onSave(draft)}){Text(t("Apply"))}},dismissButton={TextButton(onClick=onDismiss){Text(t("Cancel"))}})
 }
 
-@Composable private fun TeamStats(db:HoopDb,teamId:Long,events:List<StatEvent>,gameId:Long,fitScreen:Boolean=false,contentColor:Color=Ink,visibleColumns:Set<String> = STAT_COLUMNS.map{it.key}.toSet(),sortKey:String?=null,sortAscending:Boolean=false){
+@Composable private fun TeamStats(db:HoopDb,teamId:String,events:List<StatEvent>,gameId:String,fitScreen:Boolean=false,contentColor:Color=Ink,visibleColumns:Set<String> = STAT_COLUMNS.map{it.key}.toSet(),sortKey:String?=null,sortAscending:Boolean=false){
     val teamEvents=events.filter{it.teamId==teamId && !it.reverted}
     // Match Web: include the complete roster, even when a player has no recorded action.
     val players=rosterOrder(db.players(teamId))
@@ -2878,7 +2894,7 @@ internal fun importGameJsonFile(context:android.content.Context,db:HoopDb,uri:an
 
 private data class PdfStatRow(val player:String,val pts:Int,val twoMade:Int,val twoAttempts:Int,val threeMade:Int,val threeAttempts:Int,val ftMade:Int,val ftAttempts:Int,val reb:Int,val ast:Int,val stl:Int,val blk:Int,val tov:Int,val pf:Int)
 
-private fun pdfStatRows(db:HoopDb,teamId:Long,events:List<StatEvent>):List<PdfStatRow>{
+private fun pdfStatRows(db:HoopDb,teamId:String,events:List<StatEvent>):List<PdfStatRow>{
     val teamEvents=events.filter{it.teamId==teamId}
     fun row(label:String,playerEvents:List<StatEvent>):PdfStatRow{
         val (twoMade,twoAttempts,_)=fieldGoals(playerEvents,2)

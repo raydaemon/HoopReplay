@@ -37,14 +37,19 @@ object VideoUpload {
     fun setUploadRecordings(context: Context, value: UploadRecordings) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("upload_recordings", value.name).apply()
 
-    /** The game's cloud uuid after making sure the game and its events are synced. */
-    private suspend fun syncedGameUuid(context: Context, db: HoopDb, gameId: Long): String {
+    /** The game's id (its cloud uuid) after making sure the game and its events are synced. Only own games upload. */
+    private suspend fun syncedGameUuid(context: Context, db: HoopDb, gameId: String): String {
+        check(db.games().any { it.id == gameId && it.ownerId == null }) { t("Sync this game before uploading") }
         HoopSync.push(context, db)
-        return HoopSync.gameUuid(context, gameId) ?: error(t("Sync this game before uploading"))
+        return gameId
     }
 
+    /** The game's recordings that are this phone's own files, with their opened uri. */
+    private fun localRecordings(context: Context, db: HoopDb, gameId: String): List<Pair<VideoSegment, Uri>> =
+        db.segments(gameId).filter { it.sequence > 0 }.mapNotNull { seg -> localRecordingUri(context, seg.uri)?.let { seg to it } }
+
     /** Uploads a finished phone highlight so the Web game page can play it. */
-    suspend fun uploadHighlight(context: Context, db: HoopDb, gameId: Long, result: HighlightResult, targetKey: String, label: String) = withContext(Dispatchers.IO) {
+    suspend fun uploadHighlight(context: Context, db: HoopDb, gameId: String, result: HighlightResult, targetKey: String, label: String) = withContext(Dispatchers.IO) {
         val uuid = syncedGameUuid(context, db, gameId)
         val start = JSONObject(HoopSync.webRequest(context, "POST", "/api/highlights/upload", JSONObject().put("game_uuid", uuid)))
         put(start.getString("put_url"), result.file.length()) { out -> result.file.inputStream().use { it.copyTo(out) } }
@@ -55,10 +60,11 @@ object VideoUpload {
     }
 
     /** Recording upload state for the game: (uploaded, total) over the recordings this phone holds. */
-    suspend fun footageStatus(context: Context, db: HoopDb, gameId: Long): Pair<Int, Int> = withContext(Dispatchers.IO) {
-        val local = db.segments(gameId).filter { it.sequence > 0 && it.uri.isNotBlank() }
-        val uuid = HoopSync.gameUuid(context, gameId) ?: return@withContext 0 to local.size
-        val uploaded = uploadedSequences(context, uuid)
+    suspend fun footageStatus(context: Context, db: HoopDb, gameId: String): Pair<Int, Int> = withContext(Dispatchers.IO) {
+        val local = localRecordings(context, db, gameId).map { it.first }
+        if (local.isEmpty()) return@withContext 0 to 0
+        // A game that has not synced yet has nothing in the cloud.
+        val uploaded = runCatching { uploadedSequences(context, gameId) }.getOrDefault(emptySet())
         local.count { it.sequence in uploaded } to local.size
     }
 
@@ -72,11 +78,11 @@ object VideoUpload {
      * resumable multipart uploads: the upload id is kept until the recording completes, so a
      * killed app or a lost connection continues where it stopped. [onProgress] gets bytes sent / total.
      */
-    suspend fun uploadFootage(context: Context, db: HoopDb, gameId: Long, onProgress: (Long, Long) -> Unit = { _, _ -> }) = withContext(Dispatchers.IO) {
+    suspend fun uploadFootage(context: Context, db: HoopDb, gameId: String, onProgress: (Long, Long) -> Unit = { _, _ -> }) = withContext(Dispatchers.IO) {
         val uuid = syncedGameUuid(context, db, gameId)
         val uploaded = uploadedSequences(context, uuid)
-        val pending = db.segments(gameId).filter { it.sequence > 0 && it.uri.isNotBlank() && it.sequence !in uploaded }
-            .mapNotNull { seg -> val uri = Uri.parse(seg.uri); size(context, uri)?.let { Triple(seg, uri, it) } }
+        val pending = localRecordings(context, db, gameId).filter { it.first.sequence !in uploaded }
+            .mapNotNull { (seg, uri) -> size(context, uri)?.let { Triple(seg, uri, it) } }
         val total = pending.sumOf { it.third }
         var sent = 0L
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -109,7 +115,7 @@ object VideoUpload {
     }
 
     /** Queues a background footage upload of the game, honouring the Upload recordings setting. */
-    fun schedule(context: Context, gameId: Long) {
+    fun schedule(context: Context, gameId: String) {
         val network = when (uploadRecordings(context)) {
             UploadRecordings.Off -> return
             UploadRecordings.WifiOnly -> NetworkType.UNMETERED
@@ -163,8 +169,11 @@ object VideoUpload {
 // ponytail: no foreground service, so a multi-GB game takes several worker runs; add setForeground() with a notification if users wait too long.
 class FootageUploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val gameId = inputData.getLong("game_id", -1).takeIf { it > 0 } ?: return Result.failure()
-        return runCatching { VideoUpload.uploadFootage(applicationContext, HoopDb(applicationContext), gameId) }
+        val gameId = inputData.getString("game_id")?.takeIf { it.isNotBlank() } ?: return Result.failure()
+        val db = HoopDb(applicationContext)
+        // Only the owner uploads a game's footage; a shared game's recordings stay on this phone.
+        if (db.games().none { it.id == gameId && it.ownerId == null }) return Result.failure()
+        return runCatching { VideoUpload.uploadFootage(applicationContext, db, gameId) }
             .fold({ Result.success() }, { if (runAttemptCount < 20) Result.retry() else Result.failure() })
     }
 }

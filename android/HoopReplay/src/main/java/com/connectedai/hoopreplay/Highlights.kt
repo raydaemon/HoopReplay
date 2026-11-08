@@ -29,10 +29,29 @@ import kotlinx.coroutines.withContext
 /** One recording file of a game: its sequence, device-local uri, and length. */
 data class VideoSegment(val sequence: Int, val uri: String, val durationMs: Long)
 
+/**
+ * [uri] as a recording this app made, or null. The uri column syncs through the cloud, so only a
+ * MediaStore video this package owns under Movies/HoopReplay is opened; anything else (an app-private
+ * file, another app's media, a path someone else wrote) is ignored.
+ */
+fun localRecordingUri(context: Context, uri: String): Uri? {
+    val parsed = uri.takeIf { it.isNotBlank() }?.let(Uri::parse) ?: return null
+    if (parsed.scheme != "content" || parsed.authority != MediaStore.AUTHORITY) return null
+    val projection = arrayOf(MediaStore.MediaColumns.OWNER_PACKAGE_NAME, MediaStore.MediaColumns.RELATIVE_PATH, MediaStore.MediaColumns.MIME_TYPE)
+    val ok = runCatching {
+        context.contentResolver.query(parsed, projection, null, null, null)?.use { c ->
+            c.moveToFirst() && c.getString(0) == context.packageName &&
+                c.getString(1).orEmpty().trimEnd('/').let { it == "Movies/HoopReplay" } &&
+                c.getString(2).orEmpty().startsWith("video/")
+        } ?: false
+    }.getOrDefault(false)
+    return parsed.takeIf { ok }
+}
+
 /** Who a highlight is for: one player's plays, or one team's scoring plays. */
 sealed interface HighlightTarget {
-    data class PlayerTarget(val playerId: Long) : HighlightTarget
-    data class TeamTarget(val teamId: Long) : HighlightTarget
+    data class PlayerTarget(val playerId: String) : HighlightTarget
+    data class TeamTarget(val teamId: String) : HighlightTarget
 }
 
 /** A stretch of one recording, [startMs, endMs) inside segment `segment`. */
@@ -84,7 +103,7 @@ fun playableClips(context: Context, clips: List<Clip>, segments: List<VideoSegme
     val readable = mutableMapOf<Int, Uri?>()
     val usable = clips.mapNotNull { clip ->
         readable.getOrPut(clip.segment) {
-            uris[clip.segment]?.takeIf { it.isNotBlank() }?.let(Uri::parse)?.takeIf { uri ->
+            uris[clip.segment]?.let { localRecordingUri(context, it) }?.takeIf { uri ->
                 runCatching { context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false }.getOrDefault(false)
             }
         }?.let { clip to it }

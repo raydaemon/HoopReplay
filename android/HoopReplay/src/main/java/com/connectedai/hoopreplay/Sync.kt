@@ -40,12 +40,38 @@ object HoopSync {
     fun signedInName(context:Context)=context.getSharedPreferences("hoop_auth",Context.MODE_PRIVATE).getString("display_name","").orEmpty()
 
     /**
-     * Ends the session but keeps the remembered email and password, so signing back in is a
-     * single tap. Use [forgetCredentials] to drop those as well.
+     * Ends the session and forgets the remembered email and password. The synced games go too, so
+     * the next account on this phone can neither see nor upload them: they are uploaded first, and
+     * only if that fails do they stay, still tied to this account (see [adoptLocalData]), so
+     * nothing unsynced is lost and another account signing in still starts empty.
      */
-    fun signOut(context:Context)=clearSession(context)
+    suspend fun signOut(context:Context,db:HoopDb)=withContext(Dispatchers.IO){
+        val uploaded=isSignedIn(context)&&runCatching{push(context,db)}.recoverCatching{pull(context,db);push(context,db)}.isSuccess
+        if(uploaded){
+            db.wipe()
+            context.getSharedPreferences("hoop_sync",Context.MODE_PRIVATE).edit().remove(DATA_OWNER).apply()
+        }
+        context.getSharedPreferences("hoop_auth",Context.MODE_PRIVATE).edit().clear().apply()
+        uploaded
+    }
 
-    fun forgetCredentials(context:Context)=context.getSharedPreferences("hoop_auth",Context.MODE_PRIVATE).edit().clear().apply()
+    /** The account the phone's local games belong to; another account's sign-in wipes them first. */
+    private const val DATA_OWNER="data_owner"
+
+    /**
+     * Ties the local database to [userId]. Data left by a different account (a sign-out that could
+     * not upload, or an expired session) is wiped instead of being merged into and pushed as this one.
+     */
+    private fun adoptLocalData(context:Context,userId:String){
+        val sync=context.getSharedPreferences("hoop_sync",Context.MODE_PRIVATE)
+        val auth=context.getSharedPreferences("hoop_auth",Context.MODE_PRIVATE)
+        val owner=sync.getString(DATA_OWNER,null)?:auth.getString("user_id",null)
+        if(owner!=null&&owner!=userId){
+            HoopDb(context).apply{wipe();close()}
+            auth.edit().remove("sync_revision").apply()
+        }
+        sync.edit().putString(DATA_OWNER,userId).apply()
+    }
 
     private fun clearSession(context:Context)=context.getSharedPreferences("hoop_auth",Context.MODE_PRIVATE).edit()
         .remove("access_token").remove("refresh_token").remove("expires_at").remove("user_id").remove("display_name").apply()
@@ -198,6 +224,7 @@ object HoopSync {
         val meta=user.optJSONObject("user_metadata")?:JSONObject()
         val name=listOf("display_name","full_name","name").map{meta.optString(it).trim()}.firstOrNull{it.isNotBlank()}.orEmpty()
         val userEmail=user.optString("email").ifBlank{fallbackEmail}
+        adoptLocalData(context,user.getString("id"))
         context.getSharedPreferences("hoop_auth",Context.MODE_PRIVATE).edit()
             .putString("access_token",json.getString("access_token"))
             .putString("refresh_token",json.getString("refresh_token"))
@@ -229,14 +256,35 @@ object HoopSync {
     private fun rememberRevision(context:Context,revision:Long)=
         context.getSharedPreferences("hoop_auth",Context.MODE_PRIVATE).edit().putLong("sync_revision",revision).apply()
 
-    private data class Tombstone(val entity:String,val localId:Long,val deletedAt:Long,val deviceId:String)
+    private data class Tombstone(val entity:String,val rowId:String,val deletedAt:Long,val deviceId:String)
 
     private fun tombstonesOf(rows:JSONArray):List<Tombstone> =
         (0 until rows.length()).map{rows.getJSONObject(it)}
-            .map{Tombstone(it.optString("entity"),it.optLong("local_id"),it.optLong("deleted_at"),it.optString("device_id"))}
+            .map{Tombstone(it.optString("entity"),it.optString("row_id"),it.optLong("deleted_at"),it.optString("device_id"))}
+
+    private fun me(context:Context)=context.getSharedPreferences("hoop_auth",Context.MODE_PRIVATE).getString("user_id","").orEmpty().also{check(it.isNotBlank()){t("Sign in required")}}
+
+    private fun ownScope(context:Context)="user_id=eq.${me(context)}&sync_space=eq."+URLEncoder.encode(syncSpace(context),"UTF-8")
 
     /**
-     * Uploads this device's data.
+     * Rows stored before the uuid upgrade carry `legacy:<n>` ids. Before anything is pushed they
+     * take the uuid the server gave the same row (by its legacy_local_id); rows the cloud deleted
+     * go, and anything the cloud never saw gets a fresh id (contract rule 6b).
+     */
+    private fun adoptLegacy(context:Context,db:HoopDb){
+        if(!db.hasLegacyIds())return
+        val scope=ownScope(context)
+        val mapping=ENTITIES.associate{(table,_)->
+            val rows=requestRows(context,"/rest/v1/hoop_$table?select=id,legacy_local_id&$scope&legacy_local_id=not.is.null&order=id.asc")
+            table to (0 until rows.length()).map{rows.getJSONObject(it)}.associate{it.getLong("legacy_local_id") to it.getString("id")}
+        }
+        val dead=requestRows(context,"/rest/v1/hoop_deletions?select=entity,legacy_local_id&$scope&legacy_local_id=not.is.null&order=entity.asc,legacy_local_id.asc")
+        val tombstones=(0 until dead.length()).map{dead.getJSONObject(it)}.groupBy({it.optString("entity")},{it.getLong("legacy_local_id")}).mapValues{it.value.toSet()}
+        db.adoptLegacyIds(mapping,tombstones)
+    }
+
+    /**
+     * Uploads this account's own rows (shared games are read-only copies on the phone).
      *
      * A row missing from the snapshot never means "delete it" — that is how one device used to wipe
      * another's work. Removals travel as tombstones instead: they are recorded, then replayed
@@ -248,94 +296,77 @@ object HoopSync {
      */
     suspend fun push(context:Context,db:HoopDb)=withContext(Dispatchers.IO){
         require(configured){t("Sync is not configured")}
+        adoptLegacy(context,db)
         val revision=remoteRevision(context)
         val seen=seenRevision(context)
         // An empty account has nothing to lose, so a first upload from a device that never pulled is fine.
         check(revision==seen||(revision==0L&&seen<0)){t("Cloud has newer changes. Download first, then upload")}
-        val prefs=context.getSharedPreferences("hoop_auth",Context.MODE_PRIVATE)
-        val userId=prefs.getString("user_id","").orEmpty()
+        val userId=me(context)
         val space=syncSpace(context)
-        val scope="user_id=eq.$userId&sync_space=eq."+URLEncoder.encode(space,"UTF-8")
+        val scope=ownScope(context)
         // Events are authoritative; repair denormalized score/clock fields before serializing the
         // game rows so a stale summary cannot overwrite correct play-by-play data in the cloud.
-        db.games().forEach { db.reconcileGameSummary(it.id) }
+        db.games().filter{it.ownerId==null}.forEach { db.reconcileGameSummary(it.id) }
         val snapshot=db.exportSyncSnapshot()
-        val gameIds=(snapshot.optJSONArray("games")?:JSONArray()).let{rows->
-            (0 until rows.length()).map{rows.getJSONObject(it).optLong("id")}.toSet()
-        }
-        val liveIds=ENTITIES.associate{(table,key)->
-            val rows=snapshot.optJSONArray(key)?:JSONArray()
-            table to (0 until rows.length()).map{rows.getJSONObject(it).optLong("id")}.toSet()
-        }
 
-        // A local id that SQLite handed out again outlives its old tombstone, here and on the server.
-        val remote=tombstonesOf(requestRows(context,"/rest/v1/hoop_deletions?select=entity,local_id,deleted_at,device_id"))
         val local=tombstonesOf(db.pendingDeletions())
-        val (resurrected,current)=(remote+local).distinctBy{it.entity to it.localId}
-            .partition{liveIds[it.entity]?.contains(it.localId)==true}
-
         if(local.isNotEmpty()){
             val rows=JSONArray()
-            local.filterNot{tombstone->resurrected.any{it.entity==tombstone.entity&&it.localId==tombstone.localId}}.forEach{
+            local.forEach{
                 rows.put(JSONObject().put("user_id",userId).put("sync_space",space)
-                    .put("entity",it.entity).put("local_id",it.localId)
+                    .put("entity",it.entity).put("row_id",it.rowId)
                     .put("deleted_at",it.deletedAt).put("device_id",it.deviceId))
             }
-            if(rows.length()>0)request(context,"POST","/rest/v1/hoop_deletions?on_conflict=user_id,sync_space,entity,local_id",rows.toString(),"resolution=merge-duplicates,return=minimal")
-        }
-        resurrected.forEach{
-            request(context,"DELETE","/rest/v1/hoop_deletions?$scope&entity=eq.${it.entity}&local_id=eq.${it.localId}",null,"return=minimal")
+            request(context,"POST","/rest/v1/hoop_deletions?on_conflict=user_id,sync_space,entity,row_id",rows.toString(),"resolution=merge-duplicates,return=minimal")
         }
 
         // Surviving rows first: a player can only be removed once the events naming them let go.
         ENTITIES.forEach{(table,key)->
-            val exportedRows=snapshot.optJSONArray(key)?:JSONArray()
-            // Older local databases could retain child rows after their game was removed.
-            // The cloud schema enforces the composite game foreign key, so do not upload rows
-            // that cannot have a valid parent. They are not syncable records anymore.
-            val localRows=if(table=="segments"||table=="events") JSONArray().also{filtered->
-                for(index in 0 until exportedRows.length()){
-                    val row=exportedRows.getJSONObject(index)
-                    if(gameIds.contains(row.optLong("game_id")))filtered.put(row)
-                }
-            } else exportedRows
+            val localRows=snapshot.optJSONArray(key)?:JSONArray()
             if(localRows.length()>0){
                 val cloudRows=JSONArray()
                 for(index in 0 until localRows.length()){
                     val row=JSONObject(localRows.getJSONObject(index).toString())
-                    row.put("local_id",row.remove("id")).put("user_id",userId).put("sync_space",space)
+                    row.put("user_id",userId).put("sync_space",space)
                     if(table=="events"&&row.optString("type")=="FOULED")row.put("type","FOUL_DRAWN")
                     if(table=="events"&&row.has("reverted"))row.put("reverted",row.optInt("reverted")!=0)
                     cloudRows.put(row)
                 }
-                request(context,"POST","/rest/v1/hoop_$table?on_conflict=user_id,sync_space,local_id",cloudRows.toString(),"resolution=merge-duplicates,return=minimal")
+                request(context,"POST","/rest/v1/hoop_$table?on_conflict=id",cloudRows.toString(),"resolution=merge-duplicates,return=minimal")
             }
         }
 
         // Dependent rows first so the relational schema stays valid while tombstones are applied.
         listOf("events","segments","games","players","teams").forEach{entity->
-            current.filter{it.entity==entity}.map{it.localId}.chunked(100).forEach{batch->
-                request(context,"DELETE","/rest/v1/hoop_$entity?$scope&local_id=in.(${batch.joinToString(",")})",null,"return=minimal")
+            local.filter{it.entity==entity}.map{it.rowId}.chunked(100).forEach{batch->
+                request(context,"DELETE","/rest/v1/hoop_$entity?$scope&id=in.(${batch.joinToString(",")})",null,"return=minimal")
             }
         }
         rememberRevision(context,remoteRevision(context))
     }
 
+    /**
+     * Downloads every row this account can see. Rows another account owns (games shared with
+     * this one) keep that owner as owner_id and are never pushed back as this account's own.
+     */
     suspend fun pull(context:Context,db:HoopDb)=withContext(Dispatchers.IO){
         require(configured){t("Sync is not configured")}
+        adoptLegacy(context,db)
         // Read before the rows: a write that lands mid-pull then still counts as unseen.
         val revision=remoteRevision(context)
-        val snapshot=JSONObject().put("schemaVersion",2).put("updatedAt",System.currentTimeMillis())
-        val cloudDeletions=requestRows(context,"/rest/v1/hoop_deletions?select=entity,local_id,deleted_at,device_id&order=deleted_at.asc")
-        val deletions=JSONArray()
-        for(index in 0 until cloudDeletions.length())deletions.put(JSONObject(cloudDeletions.getJSONObject(index).toString()))
-        snapshot.put("deletions",deletions)
+        val userId=me(context)
+        val space=syncSpace(context)
+        val snapshot=JSONObject()
+        snapshot.put("deletions",requestRows(context,"/rest/v1/hoop_deletions?select=entity,row_id,deleted_at,device_id&${ownScope(context)}&order=deleted_at.asc"))
         listOf("teams","players","games","events","segments").forEach{table->
-            val cloudRows=requestRows(context,"/rest/v1/hoop_$table?select=*&order=local_id.asc")
+            val cloudRows=requestRows(context,"/rest/v1/hoop_$table?select=*&order=id.asc")
             val localRows=JSONArray()
             for(index in 0 until cloudRows.length()){
                 val row=JSONObject(cloudRows.getJSONObject(index).toString())
-                row.put("id",row.remove("local_id"));row.remove("user_id");row.remove("sync_space")
+                val owner=row.optString("user_id")
+                val rowSpace=row.optString("sync_space")
+                row.remove("user_id")
+                if(owner!=userId||rowSpace!=space)row.put("owner_id",owner)
                 if(table=="events"&&row.has("reverted"))row.put("reverted",if(row.optBoolean("reverted"))1 else 0)
                 localRows.put(row)
             }
@@ -420,12 +451,6 @@ object HoopSync {
         if(code==401&&!retried){refreshAccessToken(context);return webRequest(context,method,path,body,retried=true)}
         check(code in 200..299){runCatching{JSONObject(text).optString("error")}.getOrNull()?.takeIf{it.isNotBlank()}?:t("Request failed ({code})","code" to code)}
         return text
-    }
-
-    /** The cloud uuid of a local game, which the Web API routes key everything by; null until the game has synced. */
-    internal fun gameUuid(context:Context,gameId:Long):String?{
-        val rows=JSONArray(request(context,"GET","/rest/v1/hoop_games?local_id=eq.$gameId&select=uuid_id&limit=1"))
-        return if(rows.length()==0)null else rows.getJSONObject(0).optString("uuid_id").takeIf{it.isNotBlank()}
     }
 
     private fun validAccessToken(context:Context):String{
