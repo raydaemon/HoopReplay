@@ -22,17 +22,19 @@ enum VideoUpload {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: settingKey) }
     }
 
-    /// The game's cloud uuid after making sure the game and its events are synced.
-    private static func syncedGameUuid(_ store: AppStore, _ gameId: Int64) async throws -> String {
+    /// The game's cloud id (its own id) after making sure the game and its events are synced. Only
+    /// this account's games: a shared game is a read-only copy. Ids still waiting for the legacy
+    /// upgrade would change under the caller, so that upgrade happens from a full sync first.
+    private static func syncedGameUuid(_ store: AppStore, _ gameId: RowID) async throws -> String {
+        guard let game = store.game(gameId), !game.isShared, !store.hasLegacyIds else { throw HighlightError.exportFailed(t("Sync this game before uploading")) }
         try await HoopSync.push(store)
-        guard let uuid = try await HoopSync.gameUuid(gameId) else { throw HighlightError.exportFailed(t("Sync this game before uploading")) }
-        return uuid
+        return game.id
     }
 
     private static func json(_ data: Data) -> [String: Any] { (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:] }
 
     /// Uploads a finished phone highlight so the Web game page can play it.
-    static func uploadHighlight(_ store: AppStore, gameId: Int64, result: HighlightResult, targetKey: String, label: String) async throws {
+    static func uploadHighlight(_ store: AppStore, gameId: RowID, result: HighlightResult, targetKey: String, label: String) async throws {
         let uuid = try await syncedGameUuid(store, gameId)
         let start = json(try await HoopSync.webRequest("POST", "/api/highlights/upload", body: ["game_uuid": uuid]))
         guard let putURL = start["put_url"] as? String, let id = start["id"] as? String else { throw HighlightError.exportFailed(t("Upload failed: {message}", ["message": "no upload url"])) }
@@ -43,10 +45,10 @@ enum VideoUpload {
     }
 
     /// Recording upload state for the game: (uploaded, total) over the recordings this phone holds.
-    static func footageStatus(_ store: AppStore, gameId: Int64) async throws -> (Int, Int) {
-        let local = store.segmentRows.filter { $0.gameId == gameId && $0.sequence > 0 && !$0.uri.isEmpty }
-        guard let uuid = try await HoopSync.gameUuid(gameId) else { return (0, local.count) }
-        let uploaded = try await uploadedSequences(uuid)
+    static func footageStatus(_ store: AppStore, gameId: RowID) async throws -> (Int, Int) {
+        let local = store.segmentRows.filter { $0.gameId == gameId && $0.ownerId == nil && $0.sequence > 0 && !$0.uri.isEmpty }
+        guard let game = store.game(gameId), !game.isShared, !isLegacyId(game.id) else { return (0, local.count) }
+        let uploaded = try await uploadedSequences(game.id)
         return (local.filter { uploaded.contains($0.sequence) }.count, local.count)
     }
 
@@ -60,12 +62,12 @@ enum VideoUpload {
      multipart uploads: the upload id is kept until the recording completes, so a killed app or a lost
      connection continues where it stopped. `onProgress` gets bytes sent / total.
      */
-    static func uploadFootage(_ store: AppStore, gameId: Int64, onProgress: @escaping (Int64, Int64) -> Void = { _, _ in }) async throws {
+    static func uploadFootage(_ store: AppStore, gameId: RowID, onProgress: @escaping (Int64, Int64) -> Void = { _, _ in }) async throws {
         let uuid = try await syncedGameUuid(store, gameId)
         let uploaded = try await uploadedSequences(uuid)
         var pending: [(RecordingSegment, URL, Int64)] = []
-        for seg in store.segmentRows where seg.gameId == gameId && seg.sequence > 0 && !seg.uri.isEmpty && !uploaded.contains(seg.sequence) {
-            if let file = await recordingFile(seg.uri), let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.int64Value, size > 0 {
+        for seg in store.segmentRows where seg.gameId == gameId && seg.sequence > 0 && !uploaded.contains(seg.sequence) {
+            if let file = await recordingFile(seg), let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.int64Value, size > 0 {
                 pending.append((seg, file, size))
             }
         }
@@ -107,7 +109,7 @@ enum VideoUpload {
      the next recording, or from the Highlights dialog) resumes the multipart upload where it stopped.
      */
     // ponytail: foreground-only; move to a background URLSession if users close the app mid-upload.
-    static func schedule(_ store: AppStore, gameId: Int64) {
+    static func schedule(_ store: AppStore, gameId: RowID) {
         guard uploadRecordings != .off, HoopSync.isSignedIn, !running.contains(gameId) else { return }
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { path in
@@ -122,12 +124,17 @@ enum VideoUpload {
         }
         monitor.start(queue: .main)
     }
-    private static var running: Set<Int64> = []
+    private static var running: Set<RowID> = []
 
-    /// A file URL for a recording: the path itself, or the Photos asset's underlying movie file.
-    private static func recordingFile(_ uri: String) async -> URL? {
-        if uri.hasPrefix("/") { return FileManager.default.fileExists(atPath: uri) ? URL(fileURLWithPath: uri) : nil }
-        guard await requestPhotosReadAccess(), let asset = PHAsset.fetchAssets(withLocalIdentifiers: [uri], options: nil).firstObject else { return nil }
+    /// A file URL for a recording: its file in the Recordings folder, or the Photos asset's underlying movie file.
+    private static func recordingFile(_ segment: RecordingSegment) async -> URL? {
+        let id: String
+        switch recordingHandle(segment) {
+        case .file(let url)?: return url
+        case .photosAsset(let asset)?: id = asset
+        case nil: return nil
+        }
+        guard await requestPhotosReadAccess(), let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else { return nil }
         let options = PHVideoRequestOptions()
         options.isNetworkAccessAllowed = true
         options.version = .original

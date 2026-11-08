@@ -418,12 +418,12 @@ struct WeightedRow<Content: View>: View {
 
 indirect enum Page: Hashable {
     case home
-    case playerList(teamId: Int64, back: Page)
-    case playerDetail(teamId: Int64, playerId: Int64, back: Page)
-    case gameForm(Int64?)
-    case gameDetail(Int64)
-    case record(Int64)
-    case score(Int64)
+    case playerList(teamId: RowID, back: Page)
+    case playerDetail(teamId: RowID, playerId: RowID, back: Page)
+    case gameForm(RowID?)
+    case gameDetail(RowID)
+    case record(RowID)
+    case score(RowID)
 
     var landscape: Bool { if case .record = self { return true }; if case .score = self { return true }; return false }
 }

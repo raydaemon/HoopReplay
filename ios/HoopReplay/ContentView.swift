@@ -45,8 +45,8 @@ struct MainShell: View {
     let onLanguage: (AppLanguage) -> Void
     let onTab: (HomeTab) -> Void
     let onGame: () -> Void
-    let onOpen: (Int64) -> Void
-    let onOpenTeam: (Int64) -> Void
+    let onOpen: (RowID) -> Void
+    let onOpenTeam: (RowID) -> Void
 
     @State private var query = ""
     @State private var syncing = false
@@ -63,11 +63,12 @@ struct MainShell: View {
     @State private var uploadChoice = VideoUpload.uploadRecordings
     @State private var showImporter = false
     @State private var showDeleteAccount = false
+    @State private var signOutError: String?
     @State private var deletingAccount = false
     @State private var playerSort = savedPlayerSort()
 
     private var games: [Game] { store.games() }
-    private var teams: [Team] { store.teams() }
+    private var teams: [Team] { store.ownTeams() }
     private var playerCount: Int { teams.reduce(0) { $0 + store.players($1.id).count } }
     private var shown: [Game] {
         let q = query.trimmed
@@ -92,7 +93,40 @@ struct MainShell: View {
             syncing = false
         }
     }
-    private func signOut() { HoopSync.signOut(); signedIn = false; syncMessage = "Signed out" }
+    /**
+     Signing out hands the phone to whoever signs in next, so nothing of this account may stay:
+     pending changes are uploaded first, then the session, the remembered password and every
+     synced row are removed. When the upload fails the user decides whether to discard them.
+     */
+    private func signOut() {
+        guard !syncing else { return }
+        syncing = true
+        Task {
+            do {
+                try await HoopSync.pull(store); try await HoopSync.push(store)
+                finishSignOut()
+            } catch {
+                signOutError = error.localizedDescription
+            }
+            syncing = false
+        }
+    }
+    private func finishSignOut() {
+        HoopSync.signOut()
+        store.clearLocalRows()
+        signedIn = false; email = ""; password = ""; passwordVisible = false; signOutError = nil
+        syncMessage = "Signed out"
+    }
+
+    private func signOutFailedDialog(_ message: String) -> some View {
+        AlertPanel(title: t("Sign out"), onDismiss: { signOutError = nil }) {
+            Text(t("Your latest changes could not be uploaded ({message}). Signing out removes this account's games, teams and players from this phone.", ["message": message]))
+                .font(Fonts.bodyMedium).foregroundStyle(Theme.ink)
+        } buttons: {
+            MButton(t("Cancel")) { signOutError = nil }
+            MButton(t("Sign Out Anyway"), container: Theme.error) { finishSignOut() }
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -125,6 +159,7 @@ struct MainShell: View {
             if showAccount { accountMenu }
             if showAuth { authDialog }
             if showDeleteAccount { deleteAccountDialog }
+            if let signOutError { signOutFailedDialog(signOutError) }
             if syncing {
                 Color.black.opacity(0.16).ignoresSafeArea()
                 HStack(spacing: 12) { ProgressView().tint(Theme.orange); Text(t("Syncing…")).font(Fonts.bodyLarge).foregroundStyle(Theme.ink) }
@@ -502,11 +537,11 @@ struct MainShell: View {
 
 struct TeamsTab: View {
     @EnvironmentObject private var store: AppStore
-    let onOpen: (Int64) -> Void
+    let onOpen: (RowID) -> Void
     @State private var query = ""
     @State private var newName = ""
     @State private var showAdd = false
-    private var teams: [Team] { store.teams() }
+    private var teams: [Team] { store.ownTeams() }
     private var shown: [Team] { teams.filter { $0.name.localizedCaseInsensitiveContains(query.trimmed) || query.isBlank } }
 
     var body: some View {
@@ -559,7 +594,7 @@ struct PlayerListScreen: View {
     let team: Team
     let onBack: () -> Void
     let onTeamDeleted: () -> Void
-    let onPlayer: (Int64) -> Void
+    let onPlayer: (RowID) -> Void
     @State private var query = ""
     @State private var first = ""
     @State private var last = ""
@@ -576,10 +611,11 @@ struct PlayerListScreen: View {
         ZStack {
             VStack(spacing: 0) {
                 MTopAppBar(title: team.name) { BackButton(action: onBack) } actions: {
-                    HStack(spacing: 8) {
+                    // A team of a game someone shared with this account is a read-only copy.
+                    if team.ownerId == nil { HStack(spacing: 8) {
                         MButton(t("Delete team"), container: Theme.error, height: 36, horizontalPadding: 12) { deletingTeam = true }
                         MButton(t("Add player"), height: 36, horizontalPadding: 16) { showAdd = true }.accessibilityIdentifier("add-player-button")
-                    }.padding(.trailing, 12)
+                    }.padding(.trailing, 12) }
                 }
                 VStack(alignment: .leading, spacing: 0) {
                     MTextField(label: t("Search players…"), placeholder: t("Enter a name or number"), text: $query, autocapitalize: false).padding(.top, 8)
@@ -662,10 +698,10 @@ struct PlayerDetailScreen: View {
                         }
                     }
                     Spacer()
-                    HStack(spacing: 12) {
+                    if current.ownerId == nil { HStack(spacing: 12) {
                         MButton(t("Delete"), container: Theme.error, height: 48, fullWidth: true) { deleting = true }
                         MButton(t("Edit"), height: 48, fullWidth: true) { editFirst = firstNameOf(current.name); editLast = lastNameOf(current.name); editNumber = current.number; editing = true }
-                    }
+                    } }
                 }
                 .padding(16)
             }
@@ -746,7 +782,7 @@ struct GameForm: View {
     @State private var pickingDate = false
     @State private var pickingTime = false
     @State private var draftDate = Date()
-    private var teams: [Team] { store.teams().sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } }
+    private var teams: [Team] { store.ownTeams().sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } }
     private var canSave: Bool { home != nil && away != nil && home?.id != away?.id }
     private func format(_ pattern: String) -> String { let f = DateFormatter(); f.dateFormat = pattern; return f.string(from: scheduledAt) }
 

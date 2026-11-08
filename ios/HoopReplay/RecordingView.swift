@@ -21,12 +21,6 @@ private func lowStorage() -> Bool {
     return available < minRecordingBytes
 }
 
-private var recordingsDirectory: URL {
-    let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Recordings", isDirectory: true)
-    try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-    return url
-}
-
 private func videoFileName() -> String {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -57,7 +51,7 @@ private func saveToPhotos(_ url: URL) async -> String? {
  Returns the total recovered duration in milliseconds.
  */
 @MainActor
-private func recoverPendingRecordings(_ store: AppStore, _ gameId: Int64) async -> Int64 {
+private func recoverPendingRecordings(_ store: AppStore, _ gameId: RowID) async -> Int64 {
     let orphans = store.orphanSegments(gameId)
     guard !orphans.isEmpty, let game = store.game(gameId) else { return 0 }
     let files = (try? FileManager.default.contentsOfDirectory(at: recordingsDirectory, includingPropertiesForKeys: nil)) ?? []
@@ -89,8 +83,8 @@ final class CameraSession: NSObject, ObservableObject, AVCaptureVideoDataOutputS
     private let audioOutput = AVCaptureAudioDataOutput()
     private var device: AVCaptureDevice?
     private var videoQuality: String
-    private let gameId: Int64
-    private let homeTeamId: Int64
+    private let gameId: RowID
+    private let homeTeamId: RowID
     private weak var store: AppStore?
     var onCameraReady: (() -> Void)?
 
@@ -118,7 +112,7 @@ final class CameraSession: NSObject, ObservableObject, AVCaptureVideoDataOutputS
     private var needsOffset = false
     private var stopState = "PAUSED"
     private var onEvent: ((String) -> Void)?
-    private var currentSegmentId: Int64?
+    private var currentSegmentId: RowID?
 
     // Scoreboard overlay, updated from the main thread and read on the writer queue.
     private var overlayClockMs: Int64 = 0
@@ -132,7 +126,7 @@ final class CameraSession: NSObject, ObservableObject, AVCaptureVideoDataOutputS
     private var overlayKey = ""
     private let ciContext = CIContext(options: [.cacheIntermediates: false])
 
-    init(store: AppStore, gameId: Int64, homeTeamId: Int64, videoQuality: String) {
+    init(store: AppStore, gameId: RowID, homeTeamId: RowID, videoQuality: String) {
         self.store = store; self.gameId = gameId; self.homeTeamId = homeTeamId; self.videoQuality = videoQuality
         super.init()
     }
@@ -412,7 +406,7 @@ struct RecorderScreen: View {
     @EnvironmentObject private var store: AppStore
     let initial: Game
     var scoreOnly = false
-    let onOpenTeam: (Int64) -> Void
+    let onOpenTeam: (RowID) -> Void
     let onDone: () -> Void
 
     @State private var permission = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
@@ -434,17 +428,17 @@ struct RecorderScreen: View {
     // is assigned; the attempts are held here until then so they are written in play order.
     @State private var freeThrowRebound: (flow: FreeThrowFlow, results: [Bool])?
     @State private var foul: FoulFlow?
-    @State private var substitution: Int64?
-    @State private var starterTeamId: Int64?
-    @State private var homeLineup: Set<Int64> = []
-    @State private var awayLineup: Set<Int64> = []
+    @State private var substitution: RowID?
+    @State private var starterTeamId: RowID?
+    @State private var homeLineup: Set<RowID> = []
+    @State private var awayLineup: Set<RowID> = []
     @State private var selectedQuality = ""
     @State private var showClockEditor = false
     @State private var showLowStorage = false
     @State private var showStopFirst = false
     @State private var recoveredNoticeMs: Int64?
     @State private var fullStats = true
-    @State private var addPlayerTeamId: Int64?
+    @State private var addPlayerTeamId: RowID?
     @State private var editingPlay: StatEvent?
     @State private var session: CameraSession?
     @State private var wasCompleted = false
@@ -455,11 +449,11 @@ struct RecorderScreen: View {
     private var statEntryOpen: Bool { pendingAction != nil || madeShot != nil || missedShot != nil || freeThrow != nil || freeThrowRebound != nil || foul != nil || substitution != nil || showClockEditor }
 
     // Replay the lineup events to see who is on the floor.
-    private func lineupsFromEvents() -> (Set<Int64>, Set<Int64>) {
+    private func lineupsFromEvents() -> (Set<RowID>, Set<RowID>) {
         let recorded = events
-        func lineupOf(_ teamId: Int64) -> Set<Int64> {
+        func lineupOf(_ teamId: RowID) -> Set<RowID> {
             let roster = Set(store.players(teamId).map(\.id))
-            var onCourt: Set<Int64> = []
+            var onCourt: Set<RowID> = []
             for event in recorded where event.teamId == teamId {
                 guard let playerId = event.playerId, roster.contains(playerId) else { continue }
                 switch event.type { case "STARTER", "SUB_IN": onCourt.insert(playerId); case "SUB_OUT": onCourt.remove(playerId); default: break }
@@ -473,7 +467,7 @@ struct RecorderScreen: View {
     private func refreshLineups() { let (home, away) = lineupsFromEvents(); homeLineup = home; awayLineup = away }
 
     private func reload() { store.recalculateScore(game.id) }
-    private func event(_ team: Int64, _ player: Player?, _ type: String, _ value: Int, points: Int = 0) {
+    private func event(_ team: RowID, _ player: Player?, _ type: String, _ value: Int, points: Int = 0) {
         // A STARTER can only happen at the start of a period, so it is stamped with the period's
         // full clock no matter when the lineup is confirmed. A stat never creates a STARTER.
         let eventClock = type == "STARTER" ? game.periodDurationMs : clockMs
@@ -492,7 +486,7 @@ struct RecorderScreen: View {
         if !wasCompleted && game.status == "RECORDING" { store.status(game.id, "PAUSED") }
         store.saveProgress(game.id, period: period, clockRemainingMs: clockMs)
     }
-    private func leaveToTeam(_ teamId: Int64) {
+    private func leaveToTeam(_ teamId: RowID) {
         if state != .idle && state != .error { showStopFirst = true; return }
         leaveRecorder(); onOpenTeam(teamId)
     }

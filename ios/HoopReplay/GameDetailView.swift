@@ -13,7 +13,7 @@ struct GameDetailScreen: View {
     let onScore: () -> Void
     let onDeleted: () -> Void
     let onEdit: () -> Void
-    let onOpenTeam: (Int64) -> Void
+    let onOpenTeam: (RowID) -> Void
 
     @State private var deleting = false
     @State private var ending = false
@@ -88,11 +88,14 @@ struct GameDetailScreen: View {
                         TeamStats(teamId: selectedTeam == 0 ? game.homeId : game.awayId, events: events, gameId: game.id, fitScreen: true, visibleColumns: visibleColumns, sortKey: statSortKey, sortAscending: statSortAscending)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        EventTimeline(game: game, events: events, onOpenTeam: onOpenTeam, editable: true, onEdit: { editing = $0 })
+                        EventTimeline(game: game, events: events, onOpenTeam: onOpenTeam, editable: !game.isShared, onEdit: { editing = $0 })
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                     // Five actions share the row, so the padding shrinks and the labels never wrap.
-                    if !immersive {
+                    // A game shared by someone else is a read-only copy: it can only be viewed and exported.
+                    if !immersive && game.isShared {
+                        MOutlinedButton(t("Export"), height: 48, fullWidth: true, font: Fonts.labelMedium) { exporting = true }
+                    } else if !immersive {
                         HStack(spacing: 6) {
                             MButton(t("Edit"), height: 48, horizontalPadding: 4, fullWidth: true, action: onEdit).font(Fonts.labelMedium)
                             MButton(t("Delete"), container: Theme.error, height: 48, horizontalPadding: 4, fullWidth: true) { deleting = true }.font(Fonts.labelMedium)
@@ -162,7 +165,7 @@ struct GameDetailScreen: View {
         if points != 0 { store.score(game, homeDelta: event.teamId == game.homeId ? -points : 0, awayDelta: event.teamId == game.awayId ? -points : 0) }
         editing = nil
     }
-    private func savePlay(_ event: StatEvent, _ playerId: Int64?, _ period: Int, _ clockMs: Int64) {
+    private func savePlay(_ event: StatEvent, _ playerId: RowID?, _ period: Int, _ clockMs: Int64) {
         savePlayEdit(store, event, playerId, period, clockMs)
         editing = nil
     }
@@ -170,7 +173,7 @@ struct GameDetailScreen: View {
 
 /// Saves an edited play and, for a substitution, drags its adjacent partner to the same moment:
 /// a substitution is one moment recorded as two adjacent events (Sub out then Sub in).
-@MainActor func savePlayEdit(_ store: AppStore, _ event: StatEvent, _ playerId: Int64?, _ period: Int, _ clockMs: Int64) {
+@MainActor func savePlayEdit(_ store: AppStore, _ event: StatEvent, _ playerId: RowID?, _ period: Int, _ clockMs: Int64) {
     store.updateEvent(event.id, playerId: playerId, type: event.type, value: event.value, period: period, gameClockMs: clockMs)
     if event.type == "SUB_OUT" || event.type == "SUB_IN" {
         let all = store.events(event.gameId)
@@ -194,7 +197,7 @@ func setStatsFullscreen(_ enabled: Bool, _ baseOrientation: UIInterfaceOrientati
 /// Filters offered above the timeline, mirroring the play-list design.
 enum PlayFilter: String, CaseIterable { case all = "All", scoring = "Scoring", fouls = "Fouls", away = "Away", home = "Home" }
 
-private struct TimelineRow: Identifiable { let event: StatEvent; let awayScore: Int; let homeScore: Int; let scored: Bool; var id: Int64 { event.id } }
+private struct TimelineRow: Identifiable { let event: StatEvent; let awayScore: Int; let homeScore: Int; let scored: Bool; var id: RowID { event.id } }
 
 /// One play, written as a single compact line the way a printed play-by-play reads.
 struct TimelinePlayLine: View {
@@ -234,7 +237,7 @@ struct EventTimeline: View {
     @EnvironmentObject private var store: AppStore
     let game: Game
     let events: [StatEvent]
-    var onOpenTeam: (Int64) -> Void = { _ in }
+    var onOpenTeam: (RowID) -> Void = { _ in }
     var editable = false
     var autoScrollToLatest = false
     var showTeamHeader = true
@@ -244,7 +247,7 @@ struct EventTimeline: View {
     var onEdit: (StatEvent) -> Void = { _ in }
     @State private var collapsed: Set<Int> = []
 
-    private var players: [Int64: Player] { Dictionary(uniqueKeysWithValues: (store.players(game.homeId) + store.players(game.awayId)).map { ($0.id, $0) }) }
+    private var players: [RowID: Player] { Dictionary(uniqueKeysWithValues: (store.players(game.homeId) + store.players(game.awayId)).map { ($0.id, $0) }) }
     private var ordered: [StatEvent] { events.sorted { ($0.period, -$0.gameClockMs, $0.id) < ($1.period, -$1.gameClockMs, $1.id) } }
     private var rows: [TimelineRow] {
         var awayScore = 0, homeScore = 0
@@ -316,7 +319,7 @@ struct EventTimeline: View {
         }
     }
 
-    private func playRow(_ row: TimelineRow, _ players: [Int64: Player]) -> some View {
+    private func playRow(_ row: TimelineRow, _ players: [RowID: Player]) -> some View {
         let event = row.event
         let isHome = event.teamId == game.homeId
         let points = eventPoints(event.type, event.value)
@@ -347,8 +350,8 @@ struct EditPlayPanel: View {
     let roster: [Player]
     let onDismiss: () -> Void
     let onDelete: () -> Void
-    let onSave: (Int64?, Int, Int64) -> Void
-    @State private var playerId: Int64?
+    let onSave: (RowID?, Int, Int64) -> Void
+    @State private var playerId: RowID?
     @State private var selectedPeriod: Int
     @State private var selectedMinute: Int
     @State private var selectedSecond: Int
@@ -359,7 +362,7 @@ struct EditPlayPanel: View {
     @State private var activeField: String?
     @State private var confirmDelete = false
 
-    init(event: StatEvent, periodDurationMs: Int64, periodCount: Int, roster: [Player], onDismiss: @escaping () -> Void, onDelete: @escaping () -> Void, onSave: @escaping (Int64?, Int, Int64) -> Void) {
+    init(event: StatEvent, periodDurationMs: Int64, periodCount: Int, roster: [Player], onDismiss: @escaping () -> Void, onDelete: @escaping () -> Void, onSave: @escaping (RowID?, Int, Int64) -> Void) {
         self.event = event; self.periodDurationMs = periodDurationMs; self.periodCount = periodCount; self.roster = roster
         self.onDismiss = onDismiss; self.onDelete = onDelete; self.onSave = onSave
         _playerId = State(initialValue: event.playerId)
@@ -592,16 +595,16 @@ struct StatsHeader: View {
 
 struct TeamStats: View {
     @EnvironmentObject private var store: AppStore
-    let teamId: Int64
+    let teamId: RowID
     let events: [StatEvent]
-    let gameId: Int64
+    let gameId: RowID
     var fitScreen = false
     var contentColor: Color = Theme.ink
     var visibleColumns: Set<String> = Set(statColumns.map(\.key))
     var sortKey: String? = nil
     var sortAscending = false
 
-    private struct Line: Identifiable { let id: Int64; let label: String; let display: [String: String]; let numeric: [String: Double] }
+    private struct Line: Identifiable { let id: RowID; let label: String; let display: [String: String]; let numeric: [String: Double] }
 
     private func lines() -> [Line] {
         let teamEvents = events.filter { $0.teamId == teamId && !$0.reverted }
@@ -610,7 +613,7 @@ struct TeamStats: View {
         let persisted = store.playerGameStats(gameId)
         // Percentages with no attempts rank below 0% instead of above 100%.
         func percentValue(_ made: Int, _ attempts: Int) -> Double { attempts == 0 ? -1 : Double(made) * 100 / Double(attempts) }
-        func line(_ id: Int64, _ label: String, _ playerEvents: [StatEvent], _ saved: (Int64, Int)?) -> Line {
+        func line(_ id: RowID, _ label: String, _ playerEvents: [StatEvent], _ saved: (Int64, Int)?) -> Line {
             func total(_ types: String...) -> Int { playerEvents.filter { types.contains($0.type) }.reduce(0) { $0 + $1.value } }
             // Includes manual +1/-1 adjustments (team plays) so the points column adds up to the scoreboard.
             let points = playerEvents.filter { isScoringType($0.type) }.reduce(0) { $0 + $1.value }
@@ -624,7 +627,7 @@ struct TeamStats: View {
         }
         let unassigned = teamEvents.filter { $0.playerId == nil && $0.type != "VIDEO" }
         // Plays recorded with "Assign later" still belong to the team; list them so the rows add up to the total.
-        return players.map { player in line(player.id, player.label, teamEvents.filter { $0.playerId == player.id }, persisted[player.id] ?? (0, 0)) } + (unassigned.isEmpty ? [] : [line(-1, t("Unassigned"), unassigned, nil)])
+        return players.map { player in line(player.id, player.label, teamEvents.filter { $0.playerId == player.id }, persisted[player.id] ?? (0, 0)) } + (unassigned.isEmpty ? [] : [line("unassigned", t("Unassigned"), unassigned, nil)])
     }
 
     private func totals() -> [String: String] {

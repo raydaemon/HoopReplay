@@ -27,7 +27,7 @@ struct HighlightsDialog: View {
     @State private var footageProgress: String?
     @State private var shareURL: ShareItem?
 
-    private var teams: [(Int64, String, String)] { [(game.awayId, game.awayName, t("(Away)")), (game.homeId, game.homeName, t("(Home)"))] }
+    private var teams: [(RowID, String, String)] { [(game.awayId, game.awayName, t("(Away)")), (game.homeId, game.homeName, t("(Home)"))] }
     private var events: [StatEvent] { store.events(game.id) }
     private var segments: [RecordingSegment] { store.segmentRows.filter { $0.gameId == game.id } }
 
@@ -109,7 +109,7 @@ struct HighlightsDialog: View {
                     }
                 }
             }
-            if HoopSync.isSignedIn {
+            if HoopSync.isSignedIn && !game.isShared {
                 HStack(spacing: 12) {
                     Text(footageProgress ?? footage.map { t("Recordings in the cloud: {uploaded} of {total}", ["uploaded": $0.0, "total": $0.1]) } ?? t("Checking recordings…"))
                         .font(Fonts.bodyMedium).foregroundStyle(Theme.secondaryText).frame(maxWidth: .infinity, alignment: .leading)
@@ -145,6 +145,7 @@ struct HighlightsDialog: View {
     // Phase 2: a finished highlight uploads at once so the Web game page can play it.
     private func upload(_ result: HighlightResult, key: String, label: String) {
         guard HoopSync.isSignedIn else { uploadMessage = t("Sign in to share highlights on HoopReplay Web"); return }
+        guard !game.isShared else { return }
         retryUpload = nil
         uploadMessage = t("Uploading to HoopReplay Web…")
         Task {

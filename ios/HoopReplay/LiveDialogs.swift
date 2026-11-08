@@ -183,9 +183,9 @@ struct ClockEditorDialog: View {
 
 // MARK: - Flow models
 
-struct PlayerAction: Equatable { let teamId: Int64; let type: String; let value: Int; var points = 0; var needsAssist = false; var needsRebound = false }
-struct FreeThrowFlow: Equatable { let teamId: Int64; var player: Player? = nil; var playerSkipped = false; var format = ""; var total = 2; var results: [Bool?] = [] }
-struct FoulFlow: Equatable { let teamId: Int64; var player: Player? = nil; var playerSkipped = false }
+struct PlayerAction: Equatable { let teamId: RowID; let type: String; let value: Int; var points = 0; var needsAssist = false; var needsRebound = false }
+struct FreeThrowFlow: Equatable { let teamId: RowID; var player: Player? = nil; var playerSkipped = false; var format = ""; var total = 2; var results: [Bool?] = [] }
+struct FoulFlow: Equatable { let teamId: RowID; var player: Player? = nil; var playerSkipped = false }
 
 // MARK: - Free throws
 
@@ -261,17 +261,17 @@ struct FreeThrowDialog: View {
 
 struct StarterSelectionDialog: View {
     @EnvironmentObject private var store: AppStore
-    let teamId: Int64
+    let teamId: RowID
     let players: [Player]
-    let initial: Set<Int64>
-    let onConfirm: (Set<Int64>) -> Void
+    let initial: Set<RowID>
+    let onConfirm: (Set<RowID>) -> Void
     let onDismiss: () -> Void
     var title = "Set Starting Lineup"
     var hint = "Tap players to switch starters and substitutes"
     var selectedLabel = "Starter"
     var unselectedLabel = "Substitute"
     var confirmLabel = "Confirm"
-    @State private var selected: Set<Int64> = []
+    @State private var selected: Set<RowID> = []
     @State private var localPlayers: [Player] = []
     @State private var otherNumber = ""
     @State private var otherFirstName = ""
@@ -362,7 +362,7 @@ struct StarterSelectionDialog: View {
 
 struct PlayerChoiceDialog: View {
     @EnvironmentObject private var store: AppStore
-    let teamId: Int64
+    let teamId: RowID
     let title: String
     let players: [Player]
     let showNone: Bool
@@ -371,7 +371,7 @@ struct PlayerChoiceDialog: View {
     let onDismiss: () -> Void
     var noneLabel = "No assist"
     var context: String? = nil
-    var highlighted: Set<Int64> = []
+    var highlighted: Set<RowID> = []
     var onBack: (() -> Void)? = nil
     @State private var otherNumber = ""
     @State private var otherFirstName = ""
@@ -381,7 +381,7 @@ struct PlayerChoiceDialog: View {
     // The caller's list is a snapshot, so roster edits made through the number pad are tracked
     // here to show up in the grid immediately after the pad closes.
     @State private var extraPlayers: [Player] = []
-    @State private var removedIds: Set<Int64> = []
+    @State private var removedIds: Set<RowID> = []
     private var gridPlayers: [Player] { rosterOrder((players + extraPlayers.filter { extra in !players.contains { $0.id == extra.id } }).filter { !removedIds.contains($0.id) }) }
     private func updateActive(_ transform: (String) -> String) {
         switch activeField {
@@ -478,9 +478,9 @@ struct PlayerChoiceDialog: View {
 /// The pad edits the team roster directly, so every player list of the team sees the change.
 struct NumberPickPanel: View {
     @EnvironmentObject private var store: AppStore
-    let teamId: Int64
+    let teamId: RowID
     let onAdded: (Player) -> Void
-    let onRemoved: (Int64) -> Void
+    let onRemoved: (RowID) -> Void
     var onCancel: (() -> Void)? = nil
     var body: some View {
         let roster = store.players(teamId)
@@ -532,19 +532,19 @@ struct ReboundChoiceDialog: View {
     @EnvironmentObject private var store: AppStore
     let homeName: String
     let awayName: String
-    let awayTeamId: Int64
-    let shootingTeamId: Int64
-    let homeTeamId: Int64
+    let awayTeamId: RowID
+    let shootingTeamId: RowID
+    let homeTeamId: RowID
     let onPlayer: (Player) -> Void
     let onNone: () -> Void
     let onDismiss: () -> Void
-    @State private var teamId: Int64 = 0
+    @State private var teamId: RowID = ""
     @State private var number = ""
     @State private var firstName = ""
     @State private var lastName = ""
     @State private var activeField: String?
     @State private var pickingNumber = false
-    private var currentTeam: Int64 { teamId == 0 ? shootingTeamId : teamId }
+    private var currentTeam: RowID { teamId.isEmpty ? shootingTeamId : teamId }
     private func updateActive(_ transform: (String) -> String) {
         switch activeField {
         case "number": number = String(transform(number).filter(\.isNumber).prefix(3))
@@ -684,7 +684,7 @@ struct TeamPanel: View {
 /// Every tap writes straight through to the roster, so Cancel replays the panel back to how it opened.
 struct RosterNumbersOverlay: View {
     @EnvironmentObject private var store: AppStore
-    let teamId: Int64
+    let teamId: RowID
     let teamName: String
     let onDismiss: () -> Void
     @State private var nameMode = false
@@ -742,13 +742,13 @@ struct RosterNumbersOverlay: View {
     }
 }
 
-private struct RosterFocus: Equatable { let playerId: Int64?; let field: String }
+private struct RosterFocus: Equatable { let playerId: RowID?; let field: String }
 
 /// Names mode: two compact columns to edit number, first and last name, with a new-player row at the
 /// bottom. Edits write straight to the store, so recorded data stays attached to the same player.
 struct RosterNameEditor: View {
     @EnvironmentObject private var store: AppStore
-    let teamId: Int64
+    let teamId: RowID
     let roster: [Player]
     @State private var focus: RosterFocus?
     @State private var newNumber = ""

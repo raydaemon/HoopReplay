@@ -36,7 +36,8 @@ private enum Keychain {
     }
     static func write(_ value: String, _ account: String) {
         delete(account)
-        SecItemAdd([kSecClass: kSecClassGenericPassword, kSecAttrService: service, kSecAttrAccount: account, kSecValueData: Data(value.utf8), kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlock] as CFDictionary, nil)
+        // ThisDeviceOnly: session tokens and the remembered password never travel in a backup to another phone.
+        SecItemAdd([kSecClass: kSecClassGenericPassword, kSecAttrService: service, kSecAttrAccount: account, kSecValueData: Data(value.utf8), kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly] as CFDictionary, nil)
     }
     static func delete(_ account: String) {
         SecItemDelete([kSecClass: kSecClassGenericPassword, kSecAttrService: service, kSecAttrAccount: account] as CFDictionary)
@@ -87,9 +88,14 @@ enum HoopSync {
     /// The name the account chose (or its provider supplied), or "" when the account only has an email.
     static var signedInName: String { Keychain.read("display_name") ?? "" }
 
-    /// Ends the session but keeps the remembered email and password, so signing back in is a single tap.
-    static func signOut() { clearSession() }
-    static func forgetCredentials() { ["access_token", "refresh_token", "expires_at", "user_id", "email", "password", "display_name", "sync_revision"].forEach(Keychain.delete) }
+    /**
+     Ends the session and forgets everything tied to the account: tokens, the remembered email and
+     password, the sync revision and which account the local rows belong to. The caller pushes
+     pending changes first and clears the local rows (AppStore.clearLocalRows), so the next account
+     to sign in on this phone never sees, or uploads, this account's data.
+     */
+    static func signOut() { forgetCredentials() }
+    static func forgetCredentials() { ["access_token", "refresh_token", "expires_at", "user_id", "email", "password", "display_name", "sync_revision", "data_owner"].forEach(Keychain.delete) }
     private static func clearSession() { ["access_token", "refresh_token", "expires_at", "user_id", "display_name"].forEach(Keychain.delete) }
 
     /// Permanently deletes the authenticated Supabase user. The database function performs the
@@ -239,64 +245,83 @@ enum HoopSync {
     private static var seenRevision: Int64 { Keychain.read("sync_revision").flatMap(Int64.init) ?? -1 }
     private static func rememberRevision(_ revision: Int64) { Keychain.write(String(revision), "sync_revision") }
 
-    private struct Tombstone: Hashable { let entity: String; let localId: Int64; let deletedAt: Int64; let deviceId: String }
-    private static func tombstonesOf(_ rows: [[String: Any]]) -> [Tombstone] {
-        rows.map { Tombstone(entity: $0["entity"] as? String ?? "", localId: ($0["local_id"] as? NSNumber)?.int64Value ?? 0, deletedAt: ($0["deleted_at"] as? NSNumber)?.int64Value ?? 0, deviceId: $0["device_id"] as? String ?? "") }
+    private static func encoded(_ value: String) -> String { value.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? value }
+
+    /**
+     Runs before every pull and push. Local rows belong to one account: when a different account
+     signs in on this phone (a session expired and someone else signed in), the previous account's
+     rows are dropped instead of being merged into, and uploaded as, the new account's data. Then
+     placeholders left by the integer-id store are mapped onto the server's ids (contract rule 6b),
+     always before anything is pushed. Returns this account's user id and sync space.
+     */
+    @MainActor
+    private static func prepareLocalData(_ store: AppStore) async throws -> (userId: String, space: String) {
+        _ = try await validAccessToken()
+        guard let userId = Keychain.read("user_id")?.lowercased(), !userId.isEmpty else { throw SyncError.signInRequired }
+        let space = configuration.space
+        if let owner = Keychain.read("data_owner"), owner != userId {
+            store.clearLocalRows()
+            Keychain.delete("sync_revision")
+        }
+        Keychain.write(userId, "data_owner")
+        if store.hasLegacyIds { try await adoptLegacyIds(store, userId: userId, space: space) }
+        return (userId, space)
+    }
+
+    /// Fetches this account's legacy id mappings and legacy tombstones, then rewrites the local placeholders in one go.
+    @MainActor
+    private static func adoptLegacyIds(_ store: AppStore, userId: String, space: String) async throws {
+        let scope = "user_id=eq.\(userId)&sync_space=eq.\(encoded(space))&legacy_local_id=not.is.null"
+        func legacy(_ row: [String: Any]) -> Int64? { (row["legacy_local_id"] as? NSNumber)?.int64Value }
+        var mapped: [String: [Int64: RowID]] = [:]
+        for (table, _) in entities {
+            let rows = try await requestRows("GET", "/rest/v1/hoop_\(table)?select=id,legacy_local_id&\(scope)&order=id.asc")
+            for row in rows {
+                if let n = legacy(row), let id = (row["id"] as? String)?.lowercased() { mapped[table, default: [:]][n] = id }
+            }
+        }
+        var tombstoned: [String: Set<Int64>] = [:]
+        for row in try await requestRows("GET", "/rest/v1/hoop_deletions?select=entity,legacy_local_id&\(scope)&order=entity.asc,row_id.asc") {
+            if let entity = row["entity"] as? String, let n = legacy(row) { tombstoned[entity, default: []].insert(n) }
+        }
+        store.adoptLegacyIds(mapped: mapped, tombstoned: tombstoned)
     }
 
     /**
-     Uploads this device's data. A row missing from the snapshot never means "delete it"; removals
-     travel as tombstones and are replayed against the server. A push also refuses to run while the
-     server holds changes this device has not pulled, so the user downloads and merges first.
+     Uploads this account's own rows (contract rule 4): shared games are read-only copies and never
+     leave the phone. A row missing from the snapshot never means "delete it"; removals travel as
+     tombstones. A push also refuses to run while the server holds changes this device has not
+     pulled, so the user downloads and merges first.
      */
     @MainActor
     static func push(_ store: AppStore) async throws {
         guard configured else { throw SyncError.notConfigured }
+        let (userId, space) = try await prepareLocalData(store)
+        guard !store.hasLegacyIds else { throw SyncError.requestFailed(0, "legacy ids remain") }
         let revision = try await remoteRevision()
         let seen = seenRevision
         // An empty account has nothing to lose, so a first upload from a device that never pulled is fine.
         guard revision == seen || (revision == 0 && seen < 0) else { throw SyncError.cloudNewer }
-        let userId = Keychain.read("user_id") ?? ""
-        let space = configuration.space
-        let scope = "user_id=eq.\(userId)&sync_space=eq.\(space.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? space)"
+        let scope = "user_id=eq.\(userId)&sync_space=eq.\(encoded(space))"
         let snapshot = store.exportSyncSnapshot()
         func rows(_ key: String) -> [[String: Any]] { snapshot[key] as? [[String: Any]] ?? [] }
-        let gameIds = Set(rows("games").map { ($0["id"] as? NSNumber)?.int64Value ?? 0 })
-        var liveIds: [String: Set<Int64>] = [:]
-        for (table, key) in entities { liveIds[table] = Set(rows(key).map { ($0["id"] as? NSNumber)?.int64Value ?? 0 }) }
 
-        // A local id that was handed out again outlives its old tombstone, here and on the server.
-        let remote = tombstonesOf(try await requestRows("GET", "/rest/v1/hoop_deletions?select=entity,local_id,deleted_at,device_id"))
-        let local = tombstonesOf(store.pendingDeletions())
-        var seenKeys = Set<String>()
-        let distinct = (remote + local).filter { seenKeys.insert("\($0.entity):\($0.localId)").inserted }
-        let resurrected = distinct.filter { liveIds[$0.entity]?.contains($0.localId) == true }
-        let current = distinct.filter { liveIds[$0.entity]?.contains($0.localId) != true }
-
-        if !local.isEmpty {
-            var upload: [[String: Any]] = []
-            for tombstone in local where !resurrected.contains(where: { $0.entity == tombstone.entity && $0.localId == tombstone.localId }) {
-                var row: [String: Any] = ["user_id": userId, "sync_space": space, "entity": tombstone.entity]
-                row["local_id"] = tombstone.localId; row["deleted_at"] = tombstone.deletedAt; row["device_id"] = tombstone.deviceId
-                upload.append(row)
+        let tombstones = rows("deletions")
+        if !tombstones.isEmpty {
+            let upload = tombstones.map { tombstone -> [String: Any] in
+                var row = tombstone
+                row["user_id"] = userId; row["sync_space"] = space
+                return row
             }
-            if !upload.isEmpty {
-                _ = try await request("POST", "/rest/v1/hoop_deletions?on_conflict=user_id,sync_space,entity,local_id", body: try JSONSerialization.data(withJSONObject: upload), prefer: "resolution=merge-duplicates,return=minimal")
-            }
-        }
-        for tombstone in resurrected {
-            _ = try await request("DELETE", "/rest/v1/hoop_deletions?\(scope)&entity=eq.\(tombstone.entity)&local_id=eq.\(tombstone.localId)", prefer: "return=minimal")
+            _ = try await request("POST", "/rest/v1/hoop_deletions?on_conflict=user_id,sync_space,entity,row_id", body: try JSONSerialization.data(withJSONObject: upload), prefer: "resolution=merge-duplicates,return=minimal")
         }
 
         // Surviving rows first: a player can only be removed once the events naming them let go.
         for (table, key) in entities {
-            var localRows = rows(key)
-            // Child rows without a live parent cannot satisfy the cloud schema's foreign key.
-            if table == "segments" || table == "events" { localRows = localRows.filter { gameIds.contains(($0["game_id"] as? NSNumber)?.int64Value ?? -1) } }
+            let localRows = rows(key)
             guard !localRows.isEmpty else { continue }
             let cloudRows = localRows.map { localRow -> [String: Any] in
                 var row = localRow
-                row["local_id"] = row.removeValue(forKey: "id")
                 row["user_id"] = userId; row["sync_space"] = space
                 // Older iOS builds stored the display-only alias FOULED. Normalize it during
                 // upload so existing local games remain compatible with event_type_check.
@@ -304,38 +329,46 @@ enum HoopSync {
                 if table == "events", let reverted = row["reverted"] as? NSNumber { row["reverted"] = reverted.intValue != 0 }
                 return row
             }
-            _ = try await request("POST", "/rest/v1/hoop_\(table)?on_conflict=user_id,sync_space,local_id", body: try JSONSerialization.data(withJSONObject: cloudRows), prefer: "resolution=merge-duplicates,return=minimal")
+            for start in stride(from: 0, to: cloudRows.count, by: 500) {
+                let batch = Array(cloudRows[start..<min(start + 500, cloudRows.count)])
+                _ = try await request("POST", "/rest/v1/hoop_\(table)?on_conflict=id", body: try JSONSerialization.data(withJSONObject: batch), prefer: "resolution=merge-duplicates,return=minimal")
+            }
         }
 
         // Dependent rows first so the relational schema stays valid while tombstones are applied.
         for entity in ["events", "segments", "games", "players", "teams"] {
-            let ids = current.filter { $0.entity == entity }.map(\.localId)
+            let ids = tombstones.filter { $0["entity"] as? String == entity }.compactMap { $0["row_id"] as? String }
             for start in stride(from: 0, to: ids.count, by: 100) {
-                let batch = ids[start..<min(start + 100, ids.count)].map(String.init).joined(separator: ",")
-                _ = try await request("DELETE", "/rest/v1/hoop_\(entity)?\(scope)&local_id=in.(\(batch))", prefer: "return=minimal")
+                let batch = ids[start..<min(start + 100, ids.count)].joined(separator: ",")
+                _ = try await request("DELETE", "/rest/v1/hoop_\(entity)?\(scope)&id=in.(\(batch))", prefer: "return=minimal")
             }
         }
         rememberRevision(try await remoteRevision())
     }
 
+    /**
+     Downloads this account's rows and tombstones plus every shared game it can see. Each row keeps
+     its owner (`user_id`) and sync space, so shared rows stay read-only copies (AppStore.mergeSyncSnapshot).
+     */
     @MainActor
     static func pull(_ store: AppStore) async throws {
         guard configured else { throw SyncError.notConfigured }
+        let (userId, space) = try await prepareLocalData(store)
         // Read before the rows: a write that lands mid-pull then still counts as unseen.
         let revision = try await remoteRevision()
-        var snapshot: [String: Any] = ["schemaVersion": 2, "updatedAt": nowMs()]
-        snapshot["deletions"] = try await requestRows("GET", "/rest/v1/hoop_deletions?select=entity,local_id,deleted_at,device_id&order=deleted_at.asc")
-        for table in ["teams", "players", "games", "events", "segments"] {
-            let cloudRows = try await requestRows("GET", "/rest/v1/hoop_\(table)?select=*&order=local_id.asc")
-            snapshot[table] = cloudRows.map { cloudRow -> [String: Any] in
+        let own = "user_id=eq.\(userId)&sync_space=eq.\(encoded(space))"
+        var snapshot: [String: Any] = ["schemaVersion": 3, "updatedAt": nowMs()]
+        snapshot["deletions"] = try await requestRows("GET", "/rest/v1/hoop_deletions?select=entity,row_id,deleted_at,device_id&\(own)&order=deleted_at.asc,row_id.asc")
+        for (table, key) in entities {
+            let ownRows = try await requestRows("GET", "/rest/v1/hoop_\(table)?select=*&\(own)&order=id.asc")
+            let sharedRows = try await requestRows("GET", "/rest/v1/hoop_\(table)?select=*&user_id=neq.\(userId)&order=id.asc")
+            snapshot[key] = (ownRows + sharedRows).map { cloudRow -> [String: Any] in
                 var row = cloudRow
-                row["id"] = row.removeValue(forKey: "local_id")
-                row.removeValue(forKey: "user_id"); row.removeValue(forKey: "sync_space")
                 if table == "events", let reverted = row["reverted"] as? Bool { row["reverted"] = reverted ? 1 : 0 }
                 return row
             }
         }
-        store.mergeSyncSnapshot(snapshot)
+        store.mergeSyncSnapshot(snapshot, ownUserId: userId)
         rememberRevision(revision)
     }
 
@@ -414,12 +447,6 @@ enum HoopSync {
             throw NSError(domain: "HoopReplay", code: code, userInfo: [NSLocalizedDescriptionKey: message ?? t("Request failed ({code})", ["code": code])])
         }
         return data
-    }
-
-    /// The cloud uuid of a local game, which the Web API routes key everything by; nil until the game has synced.
-    static func gameUuid(_ gameId: Int64) async throws -> String? {
-        let rows = try await requestRows("GET", "/rest/v1/hoop_games?local_id=eq.\(gameId)&select=uuid_id")
-        return (rows.first?["uuid_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
 
     private static func validAccessToken() async throws -> String {

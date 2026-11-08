@@ -36,7 +36,7 @@ private func exportURL(_ game: Game, _ ext: String) -> URL {
 extension AppStore {
     /// Serializes one game so it can be re-imported on another device or as a new game.
     func exportGameJson(_ game: Game) -> [String: Any] {
-        func roster(_ teamId: Int64) -> [[String: Any]] { players(teamId).map { ["number": $0.number, "name": $0.name] } }
+        func roster(_ teamId: RowID) -> [[String: Any]] { players(teamId).map { ["number": $0.number, "name": $0.name] } }
         let byId = Dictionary(uniqueKeysWithValues: (players(game.homeId) + players(game.awayId)).map { ($0.id, $0) })
         return [
             "kind": gameExportKind,
@@ -83,11 +83,11 @@ extension AppStore {
         var createdPlayers = 0
         func number(_ dict: [String: Any], _ key: String, _ fallback: Int64) -> Int64 { (dict[key] as? NSNumber)?.int64Value ?? fallback }
         func text(_ dict: [String: Any], _ key: String) -> String { (dict[key] as? String ?? "").trimmed }
-        func resolveTeam(_ side: [String: Any]) -> Int64 {
+        func resolveTeam(_ side: [String: Any]) -> RowID {
             let rawName = text(side, "name")
             let name = (rawName.isEmpty ? "Unnamed" : rawName).capitalizeInitial()
-            let teamId: Int64
-            if let existing = teams().first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { teamId = existing.id }
+            let teamId: RowID
+            if let existing = ownTeams().first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { teamId = existing.id }
             else { teamId = addTeam(name); createdTeams += 1 }
             for entry in side["players"] as? [[String: Any]] ?? [] {
                 let number = text(entry, "number"), playerName = text(entry, "name")
@@ -108,7 +108,7 @@ extension AppStore {
         for event in snapshot["events"] as? [[String: Any]] ?? [] {
             let teamId = (event["side"] as? String) == "AWAY" ? awayId : homeId
             let jersey = text(event, "playerNumber"), playerName = text(event, "playerName")
-            var playerId: Int64?
+            var playerId: RowID?
             if !(jersey.isEmpty && playerName.isEmpty) {
                 if let existing = findPlayer(teamId, name: playerName, number: jersey) { playerId = existing.id }
                 else { playerId = addPlayer(teamId, name: playerName, number: jersey); createdPlayers += 1 }
@@ -133,7 +133,7 @@ extension AppStore {
 
     private struct PdfStatRow { let player: String; let pts, twoMade, twoAttempts, threeMade, threeAttempts, ftMade, ftAttempts, reb, ast, stl, blk, tov, pf: Int }
 
-    private func pdfStatRows(_ teamId: Int64, _ events: [StatEvent]) -> [PdfStatRow] {
+    private func pdfStatRows(_ teamId: RowID, _ events: [StatEvent]) -> [PdfStatRow] {
         let teamEvents = events.filter { $0.teamId == teamId }
         func row(_ label: String, _ playerEvents: [StatEvent]) -> PdfStatRow {
             let (twoMade, twoAttempts, _) = fieldGoals(playerEvents, 2)

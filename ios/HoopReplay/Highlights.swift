@@ -4,8 +4,8 @@ import Photos
 
 /// Who a highlight is for: one player's plays, or one team's scoring plays.
 enum HighlightTarget: Hashable {
-    case player(Int64)
-    case team(Int64)
+    case player(RowID)
+    case team(RowID)
 }
 
 /// A stretch of one recording, [startMs, endMs) inside segment `segment`.
@@ -69,10 +69,15 @@ enum HighlightError: LocalizedError {
     }
 }
 
-/// The recording behind a segment uri: a Photos asset id, or a file path when Photos access was denied while recording.
-private func recordingAsset(_ uri: String) async -> AVAsset? {
-    if uri.hasPrefix("/") { return FileManager.default.fileExists(atPath: uri) ? AVURLAsset(url: URL(fileURLWithPath: uri)) : nil }
-    guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [uri], options: nil).firstObject else { return nil }
+/// The recording behind a segment: a Photos asset, or a file in the Recordings folder when Photos access was denied while recording.
+private func recordingAsset(_ segment: RecordingSegment) async -> AVAsset? {
+    let id: String
+    switch recordingHandle(segment) {
+    case .file(let url)?: return AVURLAsset(url: url)
+    case .photosAsset(let asset)?: id = asset
+    case nil: return nil
+    }
+    guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else { return nil }
     let options = PHVideoRequestOptions()
     options.isNetworkAccessAllowed = true
     options.deliveryMode = .highQualityFormat
@@ -93,8 +98,9 @@ func playableClips(_ clips: [Clip], _ segments: [RecordingSegment]) async -> ([(
     var usable: [(Clip, AVAsset)] = []
     for clip in clips {
         if assets[clip.segment] == nil {
-            let uri = segments.first { $0.sequence == clip.segment }?.uri ?? ""
-            assets[clip.segment] = uri.isEmpty ? nil : await recordingAsset(uri)
+            var asset: AVAsset?
+            if let segment = segments.first(where: { $0.sequence == clip.segment }) { asset = await recordingAsset(segment) }
+            assets[clip.segment] = .some(asset)
         }
         if let asset = assets[clip.segment] ?? nil { usable.append((clip, asset)) }
     }
