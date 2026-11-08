@@ -9,6 +9,10 @@
     {
       "path": "/api/cron/keep-alive",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/purge-deleted-games",
+      "schedule": "30 3 * * *"
     }
   ]
 }

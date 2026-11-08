@@ -250,8 +250,11 @@ alter table public.hoop_highlight_videos alter column game_uuid type uuid using 
 -- old id would otherwise inherit that id's footage keys, purchases and attempt counts.
 create table if not exists public.hoop_retired_game_ids (
   id uuid primary key,
-  retired_at timestamptz not null default now()
+  retired_at timestamptz not null default now(),
+  -- Set by /api/cron/purge-deleted-games once the game's R2 and Storage objects are gone.
+  purged_at timestamptz
 );
+create index if not exists hoop_retired_game_ids_unpurged_idx on public.hoop_retired_game_ids (retired_at) where purged_at is null;
 alter table public.hoop_retired_game_ids enable row level security;
 revoke all on public.hoop_retired_game_ids from anon, authenticated;
 

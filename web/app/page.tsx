@@ -1053,7 +1053,7 @@ export default function Dashboard() {
               <span className="passwordField">
                 <input
                   type={passwordVisible ? "text" : "password"}
-                  minLength={6}
+                  minLength={8}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -1103,11 +1103,11 @@ export default function Dashboard() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="recovery-password">{t("New password")}</Label>
-              <Input id="recovery-password" type="password" autoComplete="new-password" minLength={6} required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+              <Input id="recovery-password" type="password" autoComplete="new-password" minLength={8} required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="recovery-password-confirm">{t("Confirm password")}</Label>
-              <Input id="recovery-password-confirm" type="password" autoComplete="new-password" minLength={6} required value={newPasswordConfirm} onChange={(e) => setNewPasswordConfirm(e.target.value)} />
+              <Input id="recovery-password-confirm" type="password" autoComplete="new-password" minLength={8} required value={newPasswordConfirm} onChange={(e) => setNewPasswordConfirm(e.target.value)} />
             </div>
             {recoveryMessage && <div className="authError">{recoveryMessage}</div>}
             <DialogFooter>
