@@ -157,6 +157,9 @@ export async function mintSession({ email, name }: { email: string; name: string
       password: randomUUID() + randomUUID(), email_confirm: true, app_metadata: { ...existing.app_metadata, ...proven },
     });
     if (reset.error) throw new Error(reset.error.message);
+    // Provider identities for other addresses (the previous holder's own Google/Apple) go as well.
+    const dropped = await admin.rpc("hoop_drop_foreign_identities", { p_user: existing.id, p_email: email });
+    if (dropped.error) throw new Error(dropped.error.message);
   }
   const { data, error } = await createClient(url, env("NEXT_PUBLIC_SUPABASE_ANON_KEY"), options)
     .auth.verifyOtp({ type: "magiclink", token_hash: tokenHash });

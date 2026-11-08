@@ -359,6 +359,24 @@ drop trigger if exists hoop_claim_on_provider_link on auth.identities;
 create trigger hoop_claim_on_provider_link after insert on auth.identities
   for each row execute function private.claim_on_provider_link();
 
+-- When the address's proven owner takes an account over, every other way in goes too: provider
+-- identities proving some other address (e.g. the previous holder's own Google account, linked
+-- before the email was switched to this one) would otherwise still sign that person in.
+create or replace function public.hoop_drop_foreign_identities(p_user uuid, p_email text)
+returns integer
+language sql security definer
+set search_path = ''
+as $$
+  with dropped as (
+    delete from auth.identities i
+    where i.user_id = p_user and i.provider <> 'email'
+      and lower(coalesce(i.identity_data ->> 'email', '')) <> lower(p_email)
+    returning 1)
+  select count(*)::integer from dropped
+$$;
+revoke all on function public.hoop_drop_foreign_identities(uuid, text) from public, anon, authenticated;
+grant execute on function public.hoop_drop_foreign_identities(uuid, text) to service_role;
+
 -- ponytail: existing confirmed accounts are grandfathered as proven; their origin can't be told apart now.
 update auth.users set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"email_proven": true}'::jsonb
 where email_confirmed_at is not null;
