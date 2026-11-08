@@ -5,9 +5,9 @@
  * touching windows merge. highlight-clips.fixture.json pins the result on every platform.
  */
 
-export type ClipEvent = { team_id: number; player_id: number | null; type: string; segment: number; segment_time_ms: number; reverted: number };
+export type ClipEvent = { team_id: string; player_id: string | null; type: string; segment: number; segment_time_ms: number; reverted: number };
 export type ClipSegment = { sequence: number; duration_ms: number };
-export type HighlightTarget = { player_id: number } | { team_id: number };
+export type HighlightTarget = { player_id: string } | { team_id: string };
 export type Clip = { segment: number; start_ms: number; end_ms: number };
 
 export const CLIP_BEFORE_MS = 8000;

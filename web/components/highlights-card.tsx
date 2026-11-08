@@ -13,7 +13,7 @@ import { useI18n } from "@/lib/i18n";
 import type { Player, StatEvent } from "@/lib/types";
 
 type Highlight = { id: string; target_key: string; target_label: string; source: "phone" | "cloud"; duration_ms: number; clip_count: number; created_at: string; video_url: string; download_url: string };
-type Team = { id: number; label: string };
+type Team = { id: string; label: string };
 
 async function api(path: string, init?: RequestInit) {
   const token = (await supabase!.auth.getSession()).data.session?.access_token ?? "";
@@ -68,7 +68,7 @@ export function HighlightsCard({ gameUuid, away, home, players, events, canEdit 
     }
   };
 
-  const withPlays = (teamId: number) => players.filter(p => p.team_id === teamId && events.some(e => e.player_id === p.id && !e.reverted));
+  const withPlays = (teamId: string) => players.filter(p => p.team_id === teamId && events.some(e => e.player_id === p.id && !e.reverted));
 
   return <Card id="highlights" className="scroll-mt-24 print:hidden">
     <CardHeader className="flex-row items-center gap-3">

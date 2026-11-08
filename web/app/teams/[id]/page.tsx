@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Eye, GitMerge, ListPlus, Pencil, Plus, Trash2 } from "lucide-react";
 import { tombstones, useSnapshot } from "@/lib/use-snapshot";
-import { nextId } from "@/lib/local-id";
+import { newId } from "@/lib/local-id";
 import { joinName, splitName } from "@/lib/player-name";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,7 +30,7 @@ export default function TeamDetailsPage() {
   const { t } = useI18n();
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const team = data.teams.find((item) => item.id === Number(params.id));
+  const team = data.teams.find((item) => item.id === params.id);
   const players = useMemo(
     () =>
       data.players
@@ -103,13 +103,7 @@ export default function TeamDetailsPage() {
       return true;
     });
     if (fresh.length) {
-      mutate((d) => {
-        let id = nextId(d.players);
-        return {
-          ...d,
-          players: [...d.players, ...fresh.map((entry) => ({ id: id++, team_id: team.id, ...entry }))],
-        };
-      });
+      mutate((d) => ({ ...d, players: [...d.players, ...fresh.map((entry) => ({ id: newId(), team_id: team.id, ...entry }))] }));
     }
     setBatchText("");
     setError("");
@@ -125,7 +119,7 @@ export default function TeamDetailsPage() {
     if (!name && !number) return setError(t("A player needs a name or a jersey number."));
     mutate((d) => ({ ...d, players: editing
       ? d.players.map((player) => player.id === editing.id ? { ...player, name, number } : player)
-      : [...d.players, { id: nextId(d.players), team_id: team.id, name, number }],
+      : [...d.players, { id: newId(), team_id: team.id, name, number }],
     }));
     reset();
   }
@@ -265,7 +259,7 @@ export default function TeamDetailsPage() {
                         type="button"
                         variant="outline"
                         disabled={!mergeSourceId || !user}
-                        onClick={() => setPendingMerge(players.find((player) => player.id === Number(mergeSourceId)) ?? null)}
+                        onClick={() => setPendingMerge(players.find((player) => player.id === mergeSourceId) ?? null)}
                       >
                         <GitMerge className="size-4" /> {t("Merge player")}
                       </Button>

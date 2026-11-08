@@ -14,10 +14,10 @@ import { loadSnapshot, saveSnapshot } from "./cloud-data";
 import { deviceId } from "./device";
 
 /** Records what was deleted, when, and by which device, so other devices replay the same removal. */
-export function tombstones(entity: DeletableEntity, ids: number[]): Deletion[] {
+export function tombstones(entity: DeletableEntity, ids: string[]): Deletion[] {
   const deleted_at = Date.now();
   const device_id = deviceId();
-  return ids.map((local_id) => ({ entity, local_id, deleted_at, device_id }));
+  return ids.map((row_id) => ({ entity, row_id, deleted_at, device_id }));
 }
 
 /** Wrapping the clock keeps the lint rule against impure calls in render bodies satisfied. */

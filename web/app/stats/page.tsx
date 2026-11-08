@@ -17,7 +17,7 @@ import {
 
 /** A box score line: one player, aggregated over whichever games are in scope. */
 type StatRow = {
-  id: number;
+  id: string;
   number: string;
   name: string;
   team: string;
@@ -79,7 +79,7 @@ export default function StatsPage() {
 
   const rows = useMemo<StatRow[]>(() => {
     const teamName = new Map(data.teams.map((team) => [team.id, team.name] as const));
-    const blank = (id: number, number: string, name: string, team: string): StatRow => ({
+    const blank = (id: string, number: string, name: string, team: string): StatRow => ({
       id,
       number,
       name,
@@ -99,7 +99,7 @@ export default function StatsPage() {
       turnovers: 0,
       fouls: 0,
     });
-    const totals = new Map<number, StatRow>(
+    const totals = new Map<string, StatRow>(
       data.players
         .filter((player) => teamId === ALL || String(player.team_id) === teamId)
         .map((player) => [
@@ -113,16 +113,16 @@ export default function StatsPage() {
       ]),
     );
     // Which games each player actually appeared in, so GP counts appearances rather than rows.
-    const appearances = new Map<number, Set<number>>();
+    const appearances = new Map<string, Set<string>>();
 
     for (const event of data.events) {
       // A reverted event was undone by the scorer, so it must not reach the box score.
       if (event.reverted) continue;
-      if (gameId !== ALL && event.game_id !== Number(gameId)) continue;
+      if (gameId !== ALL && event.game_id !== gameId) continue;
       if (event.player_id == null) continue;
       const row = totals.get(event.player_id);
       if (!row) continue;
-      const seen = appearances.get(event.player_id) ?? new Set<number>();
+      const seen = appearances.get(event.player_id) ?? new Set<string>();
       seen.add(event.game_id);
       appearances.set(event.player_id, seen);
 

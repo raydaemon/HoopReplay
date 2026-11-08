@@ -5,11 +5,11 @@ export type AccessSubject = "user" | "club" | "team" | "everyone";
 export type AccessRole = "editor" | "viewer";
 export type GamePermission = {
   id: string; role: AccessRole; subject_type: AccessSubject;
-  subject_email: string | null; subject_club_id: string | null; subject_team_id: number | null;
+  subject_email: string | null; subject_club_id: string | null; subject_team_id: string | null;
 };
 export type Club = { id: string; name: string };
 export type ClubMember = { club_id: string; member_email: string };
-export type TeamMember = { team_id: number; member_email: string };
+export type TeamMember = { team_id: string; member_email: string };
 
 function client() {
   if (!supabase) throw new Error("Supabase is not configured.");
@@ -45,7 +45,7 @@ export async function addGamePermission(game: Game, userId: string, role: Access
     subject_type: subject,
     subject_email: subject === "user" ? value?.trim().toLowerCase() : null,
     subject_club_id: subject === "club" ? value : null,
-    subject_team_id: subject === "team" ? Number(value) : null,
+    subject_team_id: subject === "team" ? value : null,
   };
   const { error } = await client().from("hoop_game_permissions").insert(row);
   if (error) throw error;

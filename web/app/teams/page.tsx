@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RestError, RestShell } from "../rest-shell";
 import { tombstones, useSnapshot } from "@/lib/use-snapshot";
-import { nextId } from "@/lib/local-id";
+import { newId } from "@/lib/local-id";
 import type { Team } from "@/lib/types";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DataTable } from "@/components/data-table";
@@ -35,7 +35,7 @@ export default function TeamsPage() {
   }, []);
 
   const rows = useMemo<TeamRow[]>(() => {
-    const counts = new Map<number, number>();
+    const counts = new Map<string, number>();
     for (const player of data.players) {
       counts.set(player.team_id, (counts.get(player.team_id) ?? 0) + 1);
     }
@@ -61,7 +61,7 @@ export default function TeamsPage() {
     } else {
       mutate((d) => ({
         ...d,
-        teams: [...d.teams, { id: nextId(d.teams), name: trimmed, created_at: Date.now() }],
+        teams: [...d.teams, { id: newId(), name: trimmed, created_at: Date.now() }],
       }));
     }
     reset();

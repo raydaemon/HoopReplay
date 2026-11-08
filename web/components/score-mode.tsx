@@ -7,12 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScoringTeamPanel } from "@/components/scoring-team-panel";
 import { ClockEditorDialog, type FreeThrowFlow, FreeThrowDialog, LineupDialog, PlayerChoiceDialog, ReboundDialog, RosterDialog, type RosterActions, periodLabel, startFreeThrow } from "@/components/score-dialogs";
 import type { Game, Player, Snapshot, StatEvent } from "@/lib/types";
+import { compareIds } from "@/lib/local-id";
 import { tombstones } from "@/lib/use-snapshot";
 import { applyPlays, isScoringType, lineupOf, periodStarters, playerLabel, type PlayRequest } from "@/lib/scoring";
 import { useI18n } from "@/lib/i18n";
 
-type PlayerAction = { teamId: number; type: string; value: number; points: number; needsAssist: boolean; needsRebound: boolean };
-type FoulFlow = { teamId: number; player: Player | null; playerSkipped: boolean };
+type PlayerAction = { teamId: string; type: string; value: number; points: number; needsAssist: boolean; needsRebound: boolean };
+type FoulFlow = { teamId: string; player: Player | null; playerSkipped: boolean };
 
 const statNames: Record<string, string> = { REB: "Rebound", AST: "Assist", STL: "Steal", BLK: "Block", TOV: "Turnover" };
 
@@ -44,7 +45,7 @@ export function ScoreMode({ game: savedGame, data, events, mutate, paused = fals
       if (event.team_id === savedGame.home_id) homeScore += event.value;
       if (event.team_id === savedGame.away_id) awayScore += event.value;
     }
-    const latest = [...active].sort((a, b) => a.period - b.period || b.game_clock_ms - a.game_clock_ms || a.id - b.id).at(-1);
+    const latest = [...active].sort((a, b) => a.period - b.period || b.game_clock_ms - a.game_clock_ms || compareIds(a.id, b.id)).at(-1);
     return { homeScore, awayScore, latest };
   }, [events, savedGame.away_id, savedGame.home_id]);
   const effectiveSavedGame = useMemo<Game>(() => {
@@ -65,7 +66,7 @@ export function ScoreMode({ game: savedGame, data, events, mutate, paused = fals
   const restoredClock = useMemo(() => {
     const lastPlay = [...events]
       .filter((event) => event.game_id === effectiveSavedGame.id && event.period === effectiveSavedGame.current_period && !event.reverted && event.type !== "STARTER" && event.type !== "VIDEO")
-      .sort((a, b) => b.id - a.id)[0];
+      .sort((a, b) => compareIds(b.id, a.id))[0];
     return lastPlay ? Math.min(effectiveSavedGame.clock_remaining_ms, lastPlay.game_clock_ms) : effectiveSavedGame.clock_remaining_ms;
   }, [events, effectiveSavedGame]);
   const [localClock, setClock] = useState({ period: effectiveSavedGame.current_period, ms: restoredClock });
@@ -83,9 +84,9 @@ export function ScoreMode({ game: savedGame, data, events, mutate, paused = fals
   // is assigned; the attempts are held here until then so they are written in play order.
   const [freeThrowRebound, setFreeThrowRebound] = useState<{ flow: FreeThrowFlow; results: boolean[] } | null>(null);
   const [foul, setFoul] = useState<FoulFlow | null>(null);
-  const [substitutionTeam, setSubstitutionTeam] = useState<number | null>(null);
-  const [starterTeam, setStarterTeam] = useState<number | null>(null);
-  const [rosterTeam, setRosterTeam] = useState<number | null>(null);
+  const [substitutionTeam, setSubstitutionTeam] = useState<string | null>(null);
+  const [starterTeam, setStarterTeam] = useState<string | null>(null);
+  const [rosterTeam, setRosterTeam] = useState<string | null>(null);
   const [undoNotice, setUndoNotice] = useState("");
   // While any entry popup is open the clock freezes, exactly like the Android recorder.
   const dialogOpen = paused || pendingAction !== null || madeShot !== null || missedShot !== null || freeThrow !== null || freeThrowRebound !== null || foul !== null || substitutionTeam !== null || starterTeam !== null || rosterTeam !== null || clockEditorOpen;
@@ -125,8 +126,8 @@ export function ScoreMode({ game: savedGame, data, events, mutate, paused = fals
   };
   const stop = () => { setRecorder("idle"); persistClock(clock.period, clock.ms); };
 
-  const teamName = (id: number) => data.teams.find((team) => team.id === id)?.name ?? t("Unknown");
-  const teamPlayers = (teamId: number) => data.players.filter((player) => player.team_id === teamId);
+  const teamName = (id: string) => data.teams.find((team) => team.id === id)?.name ?? t("Unknown");
+  const teamPlayers = (teamId: string) => data.players.filter((player) => player.team_id === teamId);
   const lineups = useMemo(() => ({
     [game.home_id]: lineupOf(events, data.players.filter((player) => player.team_id === game.home_id), game.home_id, clock),
     [game.away_id]: lineupOf(events, data.players.filter((player) => player.team_id === game.away_id), game.away_id, clock),
@@ -174,7 +175,7 @@ export function ScoreMode({ game: savedGame, data, events, mutate, paused = fals
     results.map((made) => ({ teamId: flow.teamId, player: flow.player, type: made ? "FT_MADE" : "FT_MISS", value: 1, points: made ? 1 : 0 }));
 
   function undo() {
-    const last = [...events].sort((a, b) => b.id - a.id)[0];
+    const last = [...events].sort((a, b) => compareIds(b.id, a.id))[0];
     if (!last) return setUndoNotice(t("Nothing to undo."));
     mutate((draft) => ({
       ...draft,
@@ -221,7 +222,7 @@ export function ScoreMode({ game: savedGame, data, events, mutate, paused = fals
       {starterTeam !== null && <LineupDialog key={`starters-${starterTeam}`} teamId={starterTeam} players={teamPlayers(starterTeam)} initial={new Set(periodStarters(events, starterTeam, game.current_period).length ? periodStarters(events, starterTeam, game.current_period) : lineups[starterTeam] ?? [])} roster={roster}
         onDismiss={() => setStarterTeam(null)}
         onConfirm={(selected) => {
-          const byId = (id: number) => data.players.find((player) => player.id === id) ?? null;
+          const byId = (id: string) => data.players.find((player) => player.id === id) ?? null;
           // The dialog edits this period's starters, not the floor at the current clock: a newly
           // picked player gets a STARTER at the top of the period, and a deselected starter simply
           // never started, so their STARTER is reverted instead of writing a Sub out at the current
@@ -244,8 +245,8 @@ export function ScoreMode({ game: savedGame, data, events, mutate, paused = fals
         title="Substitution" hint="Tap players to change who is on the court" selectedLabel="On court" unselectedLabel="Bench" confirmLabel="Save"
         onDismiss={() => setSubstitutionTeam(null)}
         onConfirm={(selected) => {
-          const current = lineups[substitutionTeam] ?? new Set<number>();
-          const byId = (id: number) => data.players.find((player) => player.id === id) ?? null;
+          const current = lineups[substitutionTeam] ?? new Set<string>();
+          const byId = (id: string) => data.players.find((player) => player.id === id) ?? null;
           const outs = [...current].filter((id) => !selected.has(id));
           const ins = [...selected].filter((id) => !current.has(id));
           // Written as out/in pairs so each pair stays adjacent for later time edits.

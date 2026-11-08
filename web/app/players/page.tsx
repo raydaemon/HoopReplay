@@ -4,7 +4,7 @@ import { FormEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RestError, RestShell } from "../rest-shell";
 import { tombstones, useSnapshot } from "@/lib/use-snapshot";
-import { nextId } from "@/lib/local-id";
+import { newId } from "@/lib/local-id";
 import { joinName, splitName } from "@/lib/player-name";
 import type { Player } from "@/lib/types";
 import { comparePlayers } from "@/lib/player-sort";
@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/select";
 import { useI18n } from "@/lib/i18n";
 
-const emptyForm = { first: "", last: "", number: "", team_id: "" as number | "" };
+const emptyForm = { first: "", last: "", number: "", team_id: "" as string };
 /** Radix selects cannot hold an empty item value, so the "no filter" choice gets a sentinel. */
 const ALL_TEAMS = "all";
 
@@ -50,7 +50,7 @@ export default function PlayersPage() {
   const rows = useMemo<PlayerRow[]>(
     () =>
       data.players
-        .filter((player) => teamFilter === ALL_TEAMS || player.team_id === Number(teamFilter))
+        .filter((player) => teamFilter === ALL_TEAMS || player.team_id === teamFilter)
         .map((player) => ({ ...player, team: teamById.get(player.team_id)?.name ?? t("Unknown") }))
         .sort((a, b) => comparePlayers(a, b) || a.team.localeCompare(b.team)),
     [data.players, teamById, teamFilter, t],
@@ -81,7 +81,7 @@ export default function PlayersPage() {
     } else {
       mutate((d) => ({
         ...d,
-        players: [...d.players, { id: nextId(d.players), team_id, name, number }],
+        players: [...d.players, { id: newId(), team_id, name, number }],
       }));
     }
     reset();
@@ -179,7 +179,7 @@ export default function PlayersPage() {
                 <Label htmlFor="player-team">{t("Team")}</Label>
                 <Select
                   value={form.team_id === "" ? undefined : String(form.team_id)}
-                  onValueChange={(value) => setForm({ ...form, team_id: Number(value) })}
+                  onValueChange={(value) => setForm({ ...form, team_id: value })}
                 >
                   <SelectTrigger id="player-team">
                     <SelectValue placeholder={t("Select a team")} />

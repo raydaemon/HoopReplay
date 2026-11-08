@@ -1,28 +1,29 @@
-import { deviceId } from "./device";
-
-const saltRange = 1000;
-
-/** Stable per-device number in [0, saltRange) that keeps two devices off each other's ids. */
-function deviceSalt() {
-  const id = deviceId();
-  let hash = 0;
-  for (let index = 0; index < id.length; index += 1) hash = (hash * 31 + id.charCodeAt(index)) % saltRange;
-  return hash;
-}
-
-let lastTick = 0;
+let lastMs = 0;
+let counter = 0;
 
 /**
- * Allocates the device-local integer id for a new row.
- *
- * `max(existing) + 1` looks obvious and is wrong across devices: two devices that loaded the same
- * data both pick the same number for different rows, and whichever saves last silently replaces the
- * other's row. Deriving the id from the clock and a per-device salt keeps every device in its own
- * lane while the ids stay sortable by creation order.
+ * A new row id: a lowercase UUIDv7 (RFC 9562). Every client and the server share one global id
+ * space, and the 48-bit millisecond prefix keeps ids sortable by creation order. Ids made in the
+ * same millisecond bump a 12-bit counter in rand_a so they still sort in creation order.
  */
-export function nextId(rows: { id: number }[]) {
-  const highest = rows.reduce((most, row) => Math.max(most, row.id), 0);
-  const tick = Math.max(Date.now(), Math.floor(highest / saltRange) + 1, lastTick + 1);
-  lastTick = tick;
-  return tick * saltRange + deviceSalt();
+export function newId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  let ms = Date.now();
+  if (ms <= lastMs) {
+    counter += 1;
+    if (counter > 0xfff) { lastMs += 1; counter = 0; }
+    ms = lastMs;
+  } else {
+    lastMs = ms;
+    counter = bytes[6] & 0x07; // random start, leaves room to count up
+  }
+  for (let index = 5; index >= 0; index -= 1) { bytes[index] = ms % 256; ms = Math.floor(ms / 256); }
+  bytes[6] = 0x70 | (counter >> 8);
+  bytes[7] = counter & 0xff;
+  bytes[8] = 0x80 | (bytes[8] & 0x3f);
+  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
+
+/** Orders UUIDv7 ids by creation time (plain code-unit comparison, never locale collation). */
+export const compareIds = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);

@@ -15,7 +15,7 @@ export type DashboardSummary = {
 };
 
 export type DashboardGame = {
-  id: number;
+  id: string;
   href: string;
   title: string;
   awayName: string;
@@ -78,13 +78,13 @@ function statusPresentation(status: string, t: Translate): Pick<DashboardGame, "
   }
 }
 
-function describeGame(game: Game, teamName: (id: number) => string, t: Translate): DashboardGame {
+function describeGame(game: Game, teamName: (id: string) => string, t: Translate): DashboardGame {
   const awayName = teamName(game.away_id);
   const homeName = teamName(game.home_id);
   const finished = game.status === "COMPLETED";
   return {
     id: game.id,
-    href: `/games/${game.uuid_id ?? game.id}`,
+    href: `/games/${game.id}`,
     title: game.title || t("{away} vs {home}", { away: awayName, home: homeName }),
     awayName,
     homeName,
@@ -137,7 +137,7 @@ export function buildTrend(snapshot: Snapshot, weeks: number, now = Date.now()):
 /** Everything the dashboard shows, computed once per snapshot. */
 export function buildDashboard(snapshot: Snapshot, trendWeeks = 8, now = Date.now(), t: Translate = format): DashboardModel {
   const teamById = new Map(snapshot.teams.map((team) => [team.id, team]));
-  const teamName = (id: number) => teamById.get(id)?.name ?? t("Unknown team");
+  const teamName = (id: string) => teamById.get(id)?.name ?? t("Unknown team");
   const games = snapshot.games.map((game) => describeGame(game, teamName, t));
   const gameById = new Map(games.map((game) => [game.id, game]));
   const liveEvents = snapshot.events.filter((event) => !event.reverted);
@@ -166,8 +166,8 @@ export function buildDashboard(snapshot: Snapshot, trendWeeks = 8, now = Date.no
   // Activity is reconstructed from timestamps: plays batched per game and day, games and teams
   // by creation, and completed games by their last recorded play.
   const activity: DashboardActivity[] = [];
-  const playBatches = new Map<string, { gameId: number; count: number; latest: number }>();
-  const lastPlay = new Map<number, number>();
+  const playBatches = new Map<string, { gameId: string; count: number; latest: number }>();
+  const lastPlay = new Map<string, number>();
   for (const event of liveEvents) {
     const key = `${event.game_id}:${dayKey(event.created_at)}`;
     const batch = playBatches.get(key) ?? { gameId: event.game_id, count: 0, latest: 0 };

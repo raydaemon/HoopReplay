@@ -19,6 +19,10 @@ import { accountLabel, initials } from "@/lib/account";
 import { useI18n } from "@/lib/i18n";
 import { LANGUAGES } from "@/lib/i18n-core";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import type { User } from "@supabase/supabase-js";
 import {
   type DeletableEntity,
@@ -34,7 +38,7 @@ import {
 import { isConfigured, supabase } from "../lib/supabase";
 import { loadSnapshot, saveSnapshot } from "../lib/cloud-data";
 import { deviceId } from "../lib/device";
-import { nextId } from "../lib/local-id";
+import { compareIds, newId } from "../lib/local-id";
 import { exportGameFileName, exportGameJson, importGameJson } from "../lib/game-portability";
 import { comparePlayers, getPlayerSort, playerSelectionLabel, type PlayerSort } from "../lib/player-sort";
 
@@ -76,10 +80,10 @@ type FreeThrowResult = "made" | "missed" | null;
 type CaptureMode = "record" | "score" | "full";
 
 /** Records what was deleted, when, and by which device, so other devices replay the same removal. */
-function tombstones(entity: DeletableEntity, ids: number[]): Deletion[] {
+function tombstones(entity: DeletableEntity, ids: string[]): Deletion[] {
   const deleted_at = Date.now();
   const device_id = deviceId();
-  return ids.map((local_id) => ({ entity, local_id, deleted_at, device_id }));
+  return ids.map((row_id) => ({ entity, row_id, deleted_at, device_id }));
 }
 function formatClock(ms: number) {
   return `${String(Math.floor(ms / 60000)).padStart(2, "0")}:${
@@ -164,9 +168,53 @@ function authRedirectUrl() {
     : "https://www.hoopreplay.com";
 }
 
+// PKCE for our own Google / Apple sign-in (see app/api/login/shared.ts): the tab keeps the
+// verifier, the server only ever sees its SHA-256 challenge until the code is redeemed.
+const LOGIN_VERIFIER_KEY = "hoopreplay-login-verifier";
+const base64url = (bytes: ArrayBuffer | Uint8Array) =>
+  btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+async function startLoginChallenge() {
+  const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
+  sessionStorage.setItem(LOGIN_VERIFIER_KEY, verifier);
+  return base64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
+}
+
+async function redeemLoginCode(code: string) {
+  const verifier = sessionStorage.getItem(LOGIN_VERIFIER_KEY);
+  sessionStorage.removeItem(LOGIN_VERIFIER_KEY);
+  if (!supabase || !code || !verifier) throw new Error("Sign in expired. Try again");
+  const res = await fetch("/api/login/exchange", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, code_verifier: verifier }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? "Sign in expired. Try again");
+  const { error } = await supabase.auth.setSession({ access_token: body.access_token, refresh_token: body.refresh_token });
+  if (error) throw error;
+}
+
+// A password-recovery link signs the browser in; until a new password is saved that session must
+// not be used. Kept in storage too so a reload cannot skip the step.
+const RECOVERY_KEY = "hoopreplay-password-recovery";
+const recoveryFlag = {
+  memory: false,
+  get() {
+    try { return this.memory || localStorage.getItem(RECOVERY_KEY) === "1"; } catch { return this.memory; }
+  },
+  set(on: boolean) {
+    this.memory = on;
+    try {
+      if (on) localStorage.setItem(RECOVERY_KEY, "1");
+      else localStorage.removeItem(RECOVERY_KEY);
+    } catch { /* memory flag still holds for this page */ }
+  },
+};
+
 export default function Dashboard() {
   const [data, setData] = useState<Snapshot>(emptySnapshot);
-  const [selectedGameId, setSelectedGameId] = useState<number | null>(null);
+  const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [status, setStatus] = useState(
     isConfigured ? "Connecting…" : "Setup required",
   );
@@ -176,6 +224,10 @@ export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
+  const [recoveryMessage, setRecoveryMessage] = useState("");
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -185,7 +237,7 @@ export default function Dashboard() {
   const [playerFirst, setPlayerFirst] = useState("");
   const [playerLast, setPlayerLast] = useState("");
   const [playerNumber, setPlayerNumber] = useState("");
-  const [playerTeamId, setPlayerTeamId] = useState<number | "">("");
+  const [playerTeamId, setPlayerTeamId] = useState<string>("");
   const [showGameForm, setShowGameForm] = useState(false);
   const [tab, setTab] = useState<TabKey>("dashboard");
   const [playerSort, setPlayerSort] = useState<PlayerSort>("number");
@@ -203,18 +255,20 @@ export default function Dashboard() {
       setAuthMode(auth);
       setShowAuth(true);
     }
-    // Our Google callback (/api/login/google) returns here with the session, or an error, in the hash.
+    // Our Google / Apple callback (/api/login/*) returns here with a sealed code, or an error, in
+    // the hash. The code only redeems with the PKCE verifier this tab stored when it started the
+    // sign-in, so a crafted link cannot sign the browser in to someone else's account.
     const hash = new URLSearchParams(window.location.hash.slice(1));
-    if (hash.has("token") || hash.has("login_error")) {
+    if (hash.has("login_code") || hash.has("login_error")) {
       window.history.replaceState(null, "", window.location.pathname + window.location.search);
       const loginError = hash.get("login_error");
       if (loginError) {
         setAuthMessage(`Sign in failed: ${loginError}`);
         setShowAuth(true);
       } else {
-        void supabase?.auth.setSession({
-          access_token: hash.get("token") ?? "",
-          refresh_token: hash.get("refresh") ?? "",
+        void redeemLoginCode(hash.get("login_code") ?? "").catch((error) => {
+          setAuthMessage(`Sign in failed: ${errorMessage(error, "Sign in expired. Try again")}`);
+          setShowAuth(true);
         });
       }
     }
@@ -263,6 +317,7 @@ export default function Dashboard() {
       );
     }, 5_000);
     supabase.auth.getUser().then(({ data }) => {
+      if (data.user && recoveryFlag.get()) return setRecovering(true);
       setUser(data.user);
       if (!data.user) setStatus("Local only — sign in to sync");
     }).finally(() => {
@@ -270,7 +325,15 @@ export default function Dashboard() {
       setAuthReady(true);
     });
     const { data: listener } = supabase.auth.onAuthStateChange(
-      (_e, session) => {
+      (event, session) => {
+        if (event === "PASSWORD_RECOVERY") recoveryFlag.set(true);
+        if (!session) recoveryFlag.set(false);
+        if (session && recoveryFlag.get()) {
+          // Signed in by a recovery link: hold the session back until a new password is saved.
+          setRecovering(true);
+          setAuthReady(true);
+          return;
+        }
         setUser(session?.user ?? null);
         setAuthReady(true);
         if (!session) {
@@ -351,14 +414,37 @@ export default function Dashboard() {
     setPasswordVisible(false);
     setPassword("");
   };
-  const authenticateWithProvider = (provider: "google" | "apple") => {
+  const authenticateWithProvider = async (provider: "google" | "apple") => {
     if (!supabase) return;
     setAuthMessage("");
+    const challenge = await startLoginChallenge();
     // Both run through our own API (no Supabase provider). A full navigation, not a Next page:
-    // the route answers with a redirect to Google / Apple and returns to / with the session hash.
+    // the route answers with a redirect to Google / Apple and returns to / with a sealed code.
     // eslint-disable-next-line @next/next/no-location-assign-relative-destination
     window.location.href =
-      `${window.location.origin}/api/login/${provider}/start?redirect_to=${encodeURIComponent(window.location.pathname)}`;
+      `${window.location.origin}/api/login/${provider}/start?redirect_to=${encodeURIComponent(window.location.pathname)}&code_challenge=${challenge}`;
+  };
+  const saveRecoveredPassword = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!supabase) return;
+    if (newPassword !== newPasswordConfirm) return setRecoveryMessage(t("Passwords do not match."));
+    setRecoveryMessage("");
+    const { data: updated, error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error || !updated.user) return setRecoveryMessage(error?.message ?? "Could not save password");
+    // Whoever set a password before (e.g. someone who registered this email first) is signed out.
+    await supabase.auth.signOut({ scope: "others" });
+    recoveryFlag.set(false);
+    setRecovering(false);
+    setNewPassword("");
+    setNewPasswordConfirm("");
+    setUser(updated.user);
+  };
+  const cancelRecovery = () => {
+    recoveryFlag.set(false);
+    setRecovering(false);
+    setNewPassword("");
+    setNewPasswordConfirm("");
+    void supabase?.auth.signOut({ scope: "local" });
   };
   const resetPassword = async () => {
     if (!supabase || !email.trim()) {
@@ -405,7 +491,7 @@ export default function Dashboard() {
     mutate((d) => ({
       ...d,
       teams: [...d.teams, {
-        id: nextId(d.teams),
+        id: newId(),
         name: teamName.trim(),
         created_at: Date.now(),
       }],
@@ -421,7 +507,7 @@ export default function Dashboard() {
     mutate((d) => ({
       ...d,
       players: [...d.players, {
-        id: nextId(d.players),
+        id: newId(),
         team_id: playerTeamId,
         name,
         number: playerNumber.trim(),
@@ -527,10 +613,10 @@ export default function Dashboard() {
     data.games
       .filter((item) => item.status === "RECORDING" || item.status === "PAUSED")
       .map((item) => ({
-        id: String(item.id),
+        id: item.id,
         title: item.title || t("{away} vs {home}", { away: teamById.get(item.away_id)?.name ?? t("Away"), home: teamById.get(item.home_id)?.name ?? t("Home") }),
         subtitle: item.status === "RECORDING" ? "Recording now" : "Live · paused",
-        href: `/games/${item.uuid_id ?? item.id}`,
+        href: `/games/${item.id}`,
       })), [data.games, teamById, t]);
   const setupNotice = !isConfigured
     ? (
@@ -648,7 +734,7 @@ export default function Dashboard() {
                   value={playerTeamId}
                   onChange={(e) =>
                     setPlayerTeamId(
-                      e.target.value ? Number(e.target.value) : "",
+                      e.target.value,
                     )}
                 >
                   <option value="">{t("Select team")}</option>
@@ -877,8 +963,7 @@ export default function Dashboard() {
               ...d,
               games: [...d.games, {
                 ...newGame,
-                id: nextId(d.games),
-                uuid_id: crypto.randomUUID(),
+                id: newId(),
                 home_score: 0,
                 away_score: 0,
                 status: "READY",
@@ -1004,6 +1089,33 @@ export default function Dashboard() {
           </form>
         </div>
       )}
+      <Dialog open={recovering} onOpenChange={(open) => { if (!open) cancelRecovery(); }}>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
+          <form onSubmit={saveRecoveredPassword} className="grid gap-4">
+            <div className="flex items-start justify-between gap-4">
+              <DialogHeader>
+                <DialogTitle>{t("Set a new password")}</DialogTitle>
+                <DialogDescription>{t("You opened a password reset link. Choose a new password to finish signing in.")}</DialogDescription>
+              </DialogHeader>
+              <DialogClose asChild>
+                <Button type="button" variant="ghost" size="icon" aria-label={t("Cancel")}>×</Button>
+              </DialogClose>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="recovery-password">{t("New password")}</Label>
+              <Input id="recovery-password" type="password" autoComplete="new-password" minLength={6} required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="recovery-password-confirm">{t("Confirm password")}</Label>
+              <Input id="recovery-password-confirm" type="password" autoComplete="new-password" minLength={6} required value={newPasswordConfirm} onChange={(e) => setNewPasswordConfirm(e.target.value)} />
+            </div>
+            {recoveryMessage && <div className="authError">{recoveryMessage}</div>}
+            <DialogFooter>
+              <Button type="submit" className="whitespace-nowrap">{t("Save password")}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       {confirmDialog && (
         <div className="modalBackdrop confirmBackdrop">
           <section
@@ -1061,8 +1173,8 @@ function GameForm({
   ) => void;
 }) {
   const { t } = useI18n();
-  const [home, setHome] = useState(teams[0]?.id ?? 0);
-  const [away, setAway] = useState(teams[1]?.id ?? 0);
+  const [home, setHome] = useState(teams[0]?.id ?? "");
+  const [away, setAway] = useState(teams[1]?.id ?? "");
   const [title, setTitle] = useState("");
   const [periods, setPeriods] = useState(4);
   const [minutes, setMinutes] = useState(8);
@@ -1111,7 +1223,7 @@ function GameForm({
           <label>
             {t("Home")}<select
               value={home}
-              onChange={(e) => setHome(Number(e.target.value))}
+              onChange={(e) => setHome(e.target.value)}
             >
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
@@ -1121,7 +1233,7 @@ function GameForm({
           <label>
             {t("Away")}<select
               value={away}
-              onChange={(e) => setAway(Number(e.target.value))}
+              onChange={(e) => setAway(e.target.value)}
             >
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
@@ -1198,7 +1310,7 @@ function GameWorkspace(
   const unassignedEvents = events.filter((e) => e.team_id === activeId && e.player_id === null && e.type !== "VIDEO");
   const playerById = new Map(data.players.map((p) => [p.id, p]));
   const playRows = [...events].sort((a, b) =>
-    a.period - b.period || b.game_clock_ms - a.game_clock_ms || a.id - b.id
+    a.period - b.period || b.game_clock_ms - a.game_clock_ms || compareIds(a.id, b.id)
   ).reduce<Array<{
     event: StatEvent;
     scored: boolean;
@@ -1533,15 +1645,15 @@ function LiveGame(
     } | null
   >(null);
   const [freeThrowEntry, setFreeThrowEntry] = useState<{
-    teamId: number;
+    teamId: string;
     shooter: Player;
     format: FreeThrowFormat;
     results: FreeThrowResult[];
   } | null>(null);
   const [substitutionEntry, setSubstitutionEntry] = useState<{
-    teamId: number;
-    initialIds: number[];
-    selectedIds: number[];
+    teamId: string;
+    initialIds: string[];
+    selectedIds: string[];
   } | null>(null);
   const pickerResolve = useRef<((ids: string[]) => void) | null>(null);
   const teams = [{ id: game.home_id, side: "home" as const }, {
@@ -1569,7 +1681,7 @@ function LiveGame(
       pickerResolve.current = resolve;
       setPicker({ title, options, selected: [], multiple, max, optional });
     });
-  const teamLabel = (teamId: number) =>
+  const teamLabel = (teamId: string) =>
     teamId === game.home_id
       ? t("HOME · {name}", { name: draft.teams.find((team) => team.id === teamId)?.name ?? t("Home Team") })
       : t("AWAY · {name}", { name: draft.teams.find((team) => team.id === teamId)?.name ?? t("Away Team") });
@@ -1598,7 +1710,7 @@ function LiveGame(
       max,
       optional,
     );
-    return ids.map((id) => eligible.find((player) => player.id === Number(id)))
+    return ids.map((id) => eligible.find((player) => player.id === id))
       .filter((player): player is Player => Boolean(player));
   };
   const closePicker = (ids: string[] = []) => {
@@ -1641,18 +1753,18 @@ function LiveGame(
     onChange(draft);
   }, [draft, onChange]);
   const addEvent = (
-    teamId: number,
+    teamId: string,
     player: Player | null,
     type: string,
     value: number,
     score = 0,
     actionTime = nextActionTime(),
-    relatedPlayerId: number | null = null,
+    relatedPlayerId: string | null = null,
   ) =>
     updateDraft((d) => {
       const segmentTime = recording ? Math.round(recordedDuration.current) : 0;
       const event: StatEvent = {
-        id: nextId(d.events),
+        id: newId(),
         game_id: game.id,
         team_id: teamId,
         player_id: player?.id ?? null,
@@ -1683,7 +1795,7 @@ function LiveGame(
         ),
       };
     });
-  async function score(teamId: number, amount: number) {
+  async function score(teamId: string, amount: number) {
     if (mode !== "full") {
       addEvent(teamId, null, `PTS_${amount}`, amount, amount);
       return;
@@ -1704,7 +1816,7 @@ function LiveGame(
     }
     addEvent(teamId, scorer, `PTS_${amount}`, amount, amount, actionTime);
   }
-  async function miss(teamId: number, amount: number) {
+  async function miss(teamId: string, amount: number) {
     const actionTime = nextActionTime();
     const [shooter] = await pickPlayers(
       t("Who took this shot?"),
@@ -1721,7 +1833,7 @@ function LiveGame(
     addEvent(teamId, shooter, `MISS_${amount}`, amount, 0, actionTime);
     if (rebounder) addEvent(rebounder.team_id, rebounder, "REB", 1, 0, actionTime);
   }
-  async function freeThrow(teamId: number) {
+  async function freeThrow(teamId: string) {
     const [shooter] = await pickPlayers(
       t("Who is shooting the free throw?"),
       draft.players.filter((p) => p.team_id === teamId),
@@ -1782,23 +1894,23 @@ function LiveGame(
       if (rebounder) addEvent(rebounder.team_id, rebounder, "REB", 1, 0, actionTime);
     }
   }
-  async function stat(teamId: number, type: string, title: string) {
+  async function stat(teamId: string, type: string, title: string) {
     const [player] = await pickPlayers(
       t("Who recorded this {stat}?", { stat: t(title).toLowerCase() }),
       draft.players.filter((p) => p.team_id === teamId),
     );
     if (player) addEvent(teamId, player, type, 1);
   }
-  async function starters(teamId: number) {
+  async function starters(teamId: string) {
     const roster = draft.players.filter((p) => p.team_id === teamId);
     const selected = await pickPlayers(t("Select Starting Players"), roster, true, 5);
     selected.forEach((player) => addEvent(teamId, player, "STARTER", 1));
   }
-  function substitute(teamId: number) {
-    const lineup = new Set<number>();
+  function substitute(teamId: string) {
+    const lineup = new Set<string>();
     draft.events.filter((event) =>
       event.game_id === game.id && event.team_id === teamId && !event.reverted
-    ).sort((a, b) => a.id - b.id).forEach((event) => {
+    ).sort((a, b) => compareIds(a.id, b.id)).forEach((event) => {
       if (!event.player_id) return;
       if (event.type === "STARTER" || event.type === "SUB_IN") {
         lineup.add(event.player_id);
@@ -1918,7 +2030,7 @@ function LiveGame(
         const next = {
           ...current,
           segments: [...current.segments, {
-            id: nextId(current.segments),
+            id: newId(),
             game_id: game.id,
             sequence,
             uri: `download:${filename}`,

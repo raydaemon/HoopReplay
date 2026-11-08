@@ -51,7 +51,7 @@ function PlayerButton({ player, highlighted = false, onClick }: { player: Player
 
 /** 6 named players per row; number-only players pair up so 12 fit on the same columns. */
 export function PlayerGrid({ players, leading, trailing, highlighted, onPlayer }: {
-  players: Player[]; leading?: ReactNode; trailing?: ReactNode; highlighted?: Set<number>; onPlayer: (player: Player) => void;
+  players: Player[]; leading?: ReactNode; trailing?: ReactNode; highlighted?: Set<string>; onPlayer: (player: Player) => void;
 }) {
   return <div className="grid grid-cols-6 gap-2">
     {leading}
@@ -110,9 +110,9 @@ function NewPlayerRow({ label, onAdd }: { label: string; onAdd: (name: string, n
 export type RosterActions = {
   /** Every player in the snapshot, so new ids stay unique across teams. */
   allPlayers: Player[];
-  playerHasEvents: (playerId: number) => boolean;
+  playerHasEvents: (playerId: string) => boolean;
   addPlayer: (player: Player) => void;
-  removePlayer: (playerId: number) => void;
+  removePlayer: (playerId: string) => void;
 };
 
 /**
@@ -120,7 +120,7 @@ export type RosterActions = {
  * records it; there is no Save. "Assign later" (or "No assist") comes first, "Choose number" last.
  */
 export function PlayerChoiceDialog({ teamId, title, context, players, showNone, noneLabel = "No assist", highlighted, onPlayer, onNone, onDismiss, onBack, roster }: {
-  teamId: number; title: string; context?: string; players: Player[]; showNone: boolean; noneLabel?: string; highlighted?: Set<number>;
+  teamId: string; title: string; context?: string; players: Player[]; showNone: boolean; noneLabel?: string; highlighted?: Set<string>;
   onPlayer: (player: Player) => void; onNone: () => void; onDismiss: () => void; onBack?: () => void; roster: RosterActions;
 }) {
   const { t } = useI18n();
@@ -152,14 +152,14 @@ export function PlayerChoiceDialog({ teamId, title, context, players, showNone, 
  * the user reshuffles freely (five at most), and Confirm/Save hands back the new selection.
  */
 export function LineupDialog({ teamId, players, initial, onConfirm, onDismiss, roster, title = "Set Starting Lineup", hint = "Tap players to switch starters and substitutes", selectedLabel = "Starter", unselectedLabel = "Substitute", confirmLabel = "Confirm" }: {
-  teamId: number; players: Player[]; initial: Set<number>; onConfirm: (selected: Set<number>) => void; onDismiss: () => void; roster: RosterActions;
+  teamId: string; players: Player[]; initial: Set<string>; onConfirm: (selected: Set<string>) => void; onDismiss: () => void; roster: RosterActions;
   title?: string; hint?: string; selectedLabel?: string; unselectedLabel?: string; confirmLabel?: string;
 }) {
   const { t } = useI18n();
   const [selected, setSelected] = useState(() => new Set(initial));
   // A sixth pick is allowed so the user can tap the new five first and drop the old ones after,
   // instead of a silent no-op tap; the count turns red and Confirm waits until five or fewer remain.
-  const toggle = (id: number) => setSelected((current) => {
+  const toggle = (id: string) => setSelected((current) => {
     const next = new Set(current);
     if (next.has(id)) next.delete(id);
     else next.add(id);
@@ -192,7 +192,7 @@ export function LineupDialog({ teamId, players, initial, onConfirm, onDismiss, r
 
 /** Rebound after a miss: one team at a time behind a tab, "No rebound" first, the number pad last. */
 export function ReboundDialog({ homeTeamId, awayTeamId, homeName, awayName, shootingTeamId, players, onPlayer, onNone, onDismiss, roster }: {
-  homeTeamId: number; awayTeamId: number; homeName: string; awayName: string; shootingTeamId: number; players: Player[];
+  homeTeamId: string; awayTeamId: string; homeName: string; awayName: string; shootingTeamId: string; players: Player[];
   onPlayer: (player: Player) => void; onNone: () => void; onDismiss: () => void; roster: RosterActions;
 }) {
   const { t } = useI18n();
@@ -210,7 +210,7 @@ export function ReboundDialog({ homeTeamId, awayTeamId, homeName, awayName, shoo
   return <ScoreDialog title={t("Rebound")} description={t("Who took the rebound?")} onDismiss={onDismiss}
     actions={<Button variant="outline" onClick={onDismiss}>{t("Cancel")}</Button>}>
     <div className="grid grid-cols-2 gap-2" role="tablist">
-      {[[homeTeamId, homeName], [awayTeamId, awayName]].map(([id, name]) => <button key={id} type="button" role="tab" aria-selected={teamId === id} onClick={() => setTeamId(Number(id))} className={`truncate rounded-md border-b-2 px-2 py-2 text-sm font-semibold ${teamId === id ? "border-orange-500 text-orange-700" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{name} · {shootingTeamId === id ? t("Offensive rebound") : t("Defensive rebound")}</button>)}
+      {[[homeTeamId, homeName], [awayTeamId, awayName]].map(([id, name]) => <button key={id} type="button" role="tab" aria-selected={teamId === id} onClick={() => setTeamId(id)} className={`truncate rounded-md border-b-2 px-2 py-2 text-sm font-semibold ${teamId === id ? "border-orange-500 text-orange-700" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{name} · {shootingTeamId === id ? t("Offensive rebound") : t("Defensive rebound")}</button>)}
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto">
       <PlayerGrid players={teamPlayers} onPlayer={onPlayer}
@@ -221,9 +221,9 @@ export function ReboundDialog({ homeTeamId, awayTeamId, homeName, awayName, shoo
   </ScoreDialog>;
 }
 
-export type FreeThrowFlow = { teamId: number; player: Player | null; playerSkipped: boolean; format: "" | "1+1"; total: number; results: (boolean | null)[] };
+export type FreeThrowFlow = { teamId: string; player: Player | null; playerSkipped: boolean; format: "" | "1+1"; total: number; results: (boolean | null)[] };
 
-export const startFreeThrow = (teamId: number): FreeThrowFlow => ({ teamId, player: null, playerSkipped: false, format: "", total: 2, results: [] });
+export const startFreeThrow = (teamId: string): FreeThrowFlow => ({ teamId, player: null, playerSkipped: false, format: "", total: 2, results: [] });
 
 /**
  * Free-throw trip: pick the format, then record each attempt. The trip saves itself as soon as the
@@ -281,11 +281,11 @@ export function FreeThrowDialog({ flow, onUpdate, onSave, onDismiss, onBack }: {
  * Cancel leaves the roster exactly as it was opened and Done writes it once.
  */
 export function RosterDialog({ teamId, teamName, players, onSave, onDismiss, roster }: {
-  teamId: number; teamName: string; players: Player[]; onSave: (players: Player[], removedIds: number[]) => void; onDismiss: () => void; roster: RosterActions;
+  teamId: string; teamName: string; players: Player[]; onSave: (players: Player[], removedIds: string[]) => void; onDismiss: () => void; roster: RosterActions;
 }) {
   const { t } = useI18n();
   const [draft, setDraft] = useState<Player[]>(() => rosterOrder(players));
-  const [removed, setRemoved] = useState<number[]>([]);
+  const [removed, setRemoved] = useState<string[]>([]);
   const [nameMode, setNameMode] = useState(false);
   const [notice, setNotice] = useState("");
   const [form, setForm] = useState({ number: "", first: "", last: "" });
@@ -296,7 +296,7 @@ export function RosterDialog({ teamId, teamName, players, onSave, onDismiss, ros
     setDraft((current) => current.filter((row) => row.id !== player.id));
     if (players.some((row) => row.id === player.id)) setRemoved((current) => [...current, player.id]);
   };
-  const update = (id: number, patch: Partial<Player>) => setDraft((current) => current.map((row) => row.id === id ? { ...row, ...patch } : row));
+  const update = (id: string, patch: Partial<Player>) => setDraft((current) => current.map((row) => row.id === id ? { ...row, ...patch } : row));
   const canAdd = Boolean(form.number.trim() || form.first.trim() || form.last.trim());
   return <ScoreDialog title={t("Players · {team}", { team: teamName })} description={nameMode ? t("Edit numbers and names, or add a new player") : t("Tap a number to add or remove a player")} onDismiss={onDismiss}
     actions={<>
@@ -406,7 +406,7 @@ export function EditPlayDialog({ event, label, players, allPlayers, periodDurati
 }) {
   const { t } = useI18n();
   const [localRoster, setLocalRoster] = useState(players);
-  const [playerId, setPlayerId] = useState<number | null>(event.player_id);
+  const [playerId, setPlayerId] = useState<string | null>(event.player_id);
   const [period, setPeriod] = useState(event.period);
   const [minutes, setMinutes] = useState(Math.floor(event.game_clock_ms / 60_000));
   const [seconds, setSeconds] = useState(Math.floor((event.game_clock_ms % 60_000) / 1000));

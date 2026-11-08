@@ -13,7 +13,7 @@ export default function PlayerDetailsPage() {
   const { data, authReady, loading, saving, status, user } = useSnapshot();
   const { t } = useI18n();
   const params = useParams<{ id: string }>();
-  const player = data.players.find((item) => item.id === Number(params.id));
+  const player = data.players.find((item) => item.id === params.id);
   const team = player && data.teams.find((item) => item.id === player.team_id);
   return <RestShell current="players" title={t("Player details")} status={status} saving={saving} user={user} authReady={authReady}>
     <Button asChild variant="ghost" className="w-fit"><Link href="/players"><ArrowLeft className="size-4" />{t("Back to players")}</Link></Button>

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { RestError, RestShell } from "../rest-shell";
 import { tombstones, useSnapshot } from "@/lib/use-snapshot";
 import { useI18n } from "@/lib/i18n";
-import { nextId } from "@/lib/local-id";
+import { newId } from "@/lib/local-id";
 import type { Game } from "@/lib/types";
 import { isScoringType } from "@/lib/scoring";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -46,10 +46,10 @@ function toLocalInput(epoch: number) {
   return date.toISOString().slice(0, 16);
 }
 
-const blankForm = (teams: { id: number }[]) => ({
+const blankForm = (teams: { id: string }[]) => ({
   title: "",
-  home_id: (teams[0]?.id ?? "") as number | "",
-  away_id: (teams[1]?.id ?? "") as number | "",
+  home_id: (teams[0]?.id ?? "") as string,
+  away_id: (teams[1]?.id ?? "") as string,
   status: "DRAFT",
   scheduled_at: toLocalInput(Date.now()),
   video_quality: "HIGHEST",
@@ -88,8 +88,8 @@ export default function GamesPage() {
     [data.teams],
   );
   const rows = useMemo<GameRow[]>(() => {
-    const counts = new Map<number, number>();
-    const scores = new Map<number, { home: number; away: number }>();
+    const counts = new Map<string, number>();
+    const scores = new Map<string, { home: number; away: number }>();
     for (const event of data.events) {
       if (event.reverted) continue;
       counts.set(event.game_id, (counts.get(event.game_id) ?? 0) + 1);
@@ -158,7 +158,7 @@ export default function GamesPage() {
         ...d,
         games: [...d.games, {
           ...shared,
-          id: nextId(d.games),
+          id: newId(),
           current_period: 1,
           clock_remaining_ms: period_duration_ms,
           created_at: Date.now(),
@@ -227,7 +227,7 @@ export default function GamesPage() {
       cell: ({ row }) => (
         <div className="flex justify-end gap-1.5">
           <Button asChild variant="outline" size="icon" className="size-[27px] min-h-0 min-w-0 p-0" aria-label={t("View game")} title={t("View game")}>
-            <Link href={`/games/${row.original.uuid_id}`}><Eye className="size-3" /></Link>
+            <Link href={`/games/${row.original.id}`}><Eye className="size-3" /></Link>
           </Button>
           <Button
             variant="outline"
@@ -305,7 +305,7 @@ export default function GamesPage() {
                 <Label htmlFor="game-home">{t("Home team")}</Label>
                 <Select
                   value={form.home_id === "" ? undefined : String(form.home_id)}
-                  onValueChange={(value) => setForm({ ...form, home_id: Number(value) })}
+                  onValueChange={(value) => setForm({ ...form, home_id: value })}
                 >
                   <SelectTrigger id="game-home">
                     <SelectValue placeholder={t("Select a team")} />
@@ -321,7 +321,7 @@ export default function GamesPage() {
                 <Label htmlFor="game-away">{t("Away team")}</Label>
                 <Select
                   value={form.away_id === "" ? undefined : String(form.away_id)}
-                  onValueChange={(value) => setForm({ ...form, away_id: Number(value) })}
+                  onValueChange={(value) => setForm({ ...form, away_id: value })}
                 >
                   <SelectTrigger id="game-away">
                     <SelectValue placeholder={t("Select a team")} />

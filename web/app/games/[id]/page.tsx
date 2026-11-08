@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
 import { RestError, RestLoading, RestShell } from "../../rest-shell";
 import type { Player, StatEvent } from "@/lib/types";
+import { compareIds } from "@/lib/local-id";
 import { comparePlayers } from "@/lib/player-sort";
 import { periodStarters, playerLabel } from "@/lib/scoring";
 import { GameAccessCard } from "@/components/game-access-card";
@@ -48,10 +49,10 @@ function valueFor(events: { type: string; value: number }[], stat: string): numb
   return (statTypes[stat] ?? []).reduce((sum, type) => sum + events.filter((event) => event.type === type).length, 0);
 }
 
-function plusMinusForPlayer(events: StatEvent[], playerId: number, teamId: number) {
-  const plusMinus = new Map<number, number>();
-  const ordered = [...events].sort((a, b) => a.period - b.period || b.game_clock_ms - a.game_clock_ms || a.id - b.id);
-  let playersOnCourt = new Set<number>();
+function plusMinusForPlayer(events: StatEvent[], playerId: string, teamId: string) {
+  const plusMinus = new Map<string, number>();
+  const ordered = [...events].sort((a, b) => a.period - b.period || b.game_clock_ms - a.game_clock_ms || compareIds(a.id, b.id));
+  let playersOnCourt = new Set<string>();
   let currentPeriod: number | null = null;
   for (const event of ordered) {
     if (currentPeriod !== event.period) {
@@ -78,7 +79,7 @@ function plusMinusForPlayer(events: StatEvent[], playerId: number, teamId: numbe
   return plusMinus.get(playerId) ?? 0;
 }
 
-function teamPlusMinus(events: StatEvent[], teamId: number) {
+function teamPlusMinus(events: StatEvent[], teamId: string) {
   const scoringTypes = ["PTS_2", "PTS_3", "FT_MADE"];
   return events.filter((event) => scoringTypes.includes(event.type))
     .reduce((sum, event) => sum + (event.team_id === teamId ? event.value : -event.value), 0);
@@ -146,7 +147,7 @@ function periodGroupLabel(period: number, periodCount: number, t: (key: string, 
  * order and capped at five, the same as the Android recorder. A stat never implies that a player was
  * on the floor, so minutes come solely from STARTER / SUB_IN / SUB_OUT history.
  */
-function recordedStarters(events: StatEvent[], teamId: number, period: number) {
+function recordedStarters(events: StatEvent[], teamId: string, period: number) {
   return new Set(periodStarters(events, teamId, period).slice(0, 5));
 }
 
@@ -154,18 +155,18 @@ function substitutionClock(events: StatEvent[], event: StatEvent) {
   if (event.type !== "SUB_IN") return event.game_clock_ms;
   const pairedOut = events
     .filter((candidate) => candidate.type === "SUB_OUT" && candidate.team_id === event.team_id && candidate.period === event.period && candidate.game_clock_ms >= event.game_clock_ms && candidate.game_clock_ms - event.game_clock_ms <= 5_000)
-    .sort((a, b) => a.game_clock_ms - b.game_clock_ms || Math.abs(a.id - event.id) - Math.abs(b.id - event.id))[0];
+    .sort((a, b) => a.game_clock_ms - b.game_clock_ms || Math.abs(a.created_at - event.created_at) - Math.abs(b.created_at - event.created_at))[0];
   return pairedOut?.game_clock_ms ?? event.game_clock_ms;
 }
 
-function playingTimeMs(events: StatEvent[], playerId: number, teamId: number, periodDurationMs: number) {
+function playingTimeMs(events: StatEvent[], playerId: string, teamId: string, periodDurationMs: number) {
   let totalMs = 0;
   const periods = [...new Set(events.map((event) => event.period))].sort((a, b) => a - b);
   for (const period of periods) {
     let activeFrom: number | null = recordedStarters(events, teamId, period).has(playerId) ? periodDurationMs : null;
     const substitutions = events
       .filter((event) => event.period === period && (event.player_id === playerId || event.related_player_id === playerId) && ["SUB_IN", "SUB_OUT", "SUBSTITUTION"].includes(event.type))
-      .sort((a, b) => b.game_clock_ms - a.game_clock_ms || a.id - b.id);
+      .sort((a, b) => b.game_clock_ms - a.game_clock_ms || compareIds(a.id, b.id));
     for (const event of substitutions) {
       const enters = event.type === "SUB_IN" || (event.type === "SUBSTITUTION" && event.related_player_id === playerId);
       if (enters) {
@@ -180,36 +181,36 @@ function playingTimeMs(events: StatEvent[], playerId: number, teamId: number, pe
   return totalMs;
 }
 
-function minutesForPlayer(events: StatEvent[], playerId: number, teamId: number, periodDurationMs: number) {
+function minutesForPlayer(events: StatEvent[], playerId: string, teamId: string, periodDurationMs: number) {
   const totalSeconds = Math.round(playingTimeMs(events, playerId, teamId, periodDurationMs) / 1_000);
   return `${String(Math.floor(totalSeconds / 60)).padStart(2, "0")}:${String(totalSeconds % 60).padStart(2, "0")}`;
 }
 
 /** Every column of the box score, in default order; the parent owns the shared layout state. */
 const statTableColumnIds = ["player", ...statColumns];
-/** Synthetic row id for plays recorded with "Assign later"; no real player has a negative id. */
-const UNASSIGNED_ID = -1;
+/** Synthetic row id for plays recorded with "Assign later"; never a UUID, so no real player has it. */
+const UNASSIGNED_ID = "unassigned";
 
 /** One box-score cell; the on-screen table and the PDF both read through here. */
-function statCell(player: Player, stat: string, events: StatEvent[], teamId: number, gameDurationMs: number) {
+function statCell(player: Player, stat: string, events: StatEvent[], teamId: string, gameDurationMs: number) {
   if (player.id === UNASSIGNED_ID) return stat === "MIN" || stat === "+/-" ? "—" : valueFor(events.filter((event) => event.team_id === teamId && event.player_id === null), stat);
   if (stat === "MIN") return minutesForPlayer(events, player.id, player.team_id, gameDurationMs);
   if (stat === "+/-") return plusMinusForPlayer(events, player.id, player.team_id);
   return valueFor(events.filter((event) => event.player_id === player.id), stat);
 }
-function statTeamTotal(stat: string, players: Player[], events: StatEvent[], teamId: number, gameDurationMs: number, currentPeriod: number, currentClockMs: number, fullGame: boolean) {
+function statTeamTotal(stat: string, players: Player[], events: StatEvent[], teamId: string, gameDurationMs: number, currentPeriod: number, currentClockMs: number, fullGame: boolean) {
   if (stat === "MIN") return teamMinutes(players, events, gameDurationMs, currentPeriod, currentClockMs, fullGame);
   if (stat === "+/-") return teamPlusMinus(events, teamId);
   return valueFor(events.filter((event) => event.team_id === teamId), stat);
 }
 /** Roster rows of a box score: numbered players first, then an Unassigned row when "Assign later" plays exist. */
-function boxScoreRows(players: Player[], events: StatEvent[], teamId: number): Player[] {
+function boxScoreRows(players: Player[], events: StatEvent[], teamId: string): Player[] {
   const roster = [...players].sort(comparePlayers);
   const unassigned = events.some((event) => event.team_id === teamId && event.player_id === null && event.type !== "VIDEO");
   return unassigned ? [...roster, { id: UNASSIGNED_ID, team_id: teamId, name: "Unassigned", number: "" }] : roster;
 }
 
-function TeamStatsTable({ players, events, teamId, gameDurationMs, currentPeriod, currentClockMs, fullGame = false, layout }: { players: Player[]; events: StatEvent[]; teamId: number; gameDurationMs: number; currentPeriod: number; currentClockMs: number; fullGame?: boolean; layout: ColumnLayout }) {
+function TeamStatsTable({ players, events, teamId, gameDurationMs, currentPeriod, currentClockMs, fullGame = false, layout }: { players: Player[]; events: StatEvent[]; teamId: string; gameDurationMs: number; currentPeriod: number; currentClockMs: number; fullGame?: boolean; layout: ColumnLayout }) {
   const { t } = useI18n();
   const [sorting, setSorting] = useState<SortingState>([]);
   const columns = useMemo<ColumnDef<Player>[]>(() => [
@@ -241,7 +242,7 @@ function TeamStatsTable({ players, events, teamId, gameDurationMs, currentPeriod
   </ColumnDragContext>;
 }
 
-function PeriodStats({ game, events, players, teamName, layout }: { game: { period_count: number; period_duration_ms: number; current_period: number; clock_remaining_ms: number; away_id: number; home_id: number }; events: StatEvent[]; players: Player[]; teamName: (id: number) => string; layout: ColumnLayout }) {
+function PeriodStats({ game, events, players, teamName, layout }: { game: { period_count: number; period_duration_ms: number; current_period: number; clock_remaining_ms: number; away_id: string; home_id: string }; events: StatEvent[]; players: Player[]; teamName: (id: string) => string; layout: ColumnLayout }) {
   const availablePeriods = useMemo(() => {
     const recorded = events.map((event) => event.period);
     return Array.from({ length: Math.max(game.period_count, ...recorded, 1) }, (_, index) => index + 1);
@@ -270,16 +271,16 @@ export default function GameDetailsPage() {
   const { data, user, authReady, loading, saving, status, mutate } = useSnapshot();
   const { t } = useI18n();
   const params = useParams<{ id: string }>();
-  const game = data.games.find((item) => item.uuid_id === params.id);
+  const game = data.games.find((item) => item.id === params.id);
   const events = useMemo(() => data.events.filter((event) => event.game_id === game?.id && !event.reverted), [data.events, game?.id]);
-  const teamName = (id: number) => data.teams.find((team) => team.id === id)?.name ?? t("Unknown");
-  const orderedEvents = useMemo(() => [...events].sort((a, b) => a.period - b.period || b.game_clock_ms - a.game_clock_ms || a.id - b.id), [events]);
+  const teamName = (id: string) => data.teams.find((team) => team.id === id)?.name ?? t("Unknown");
+  const orderedEvents = useMemo(() => [...events].sort((a, b) => a.period - b.period || b.game_clock_ms - a.game_clock_ms || compareIds(a.id, b.id)), [events]);
   // A substitution batch may swap several players at once. Its Sub out / Sub in events share the team,
   // period and clock and are written in pairs in id order, so each Sub in pairs with the earliest
   // still-unpaired Sub out recorded within a few seconds of it (created_at can differ by a few ms).
   const substitutionPairs = useMemo(() => {
-    const pairs = new Map<number, StatEvent>();
-    const pairedIns = new Set<number>();
+    const pairs = new Map<string, StatEvent>();
+    const pairedIns = new Set<string>();
     const groups = new Map<string, StatEvent[]>();
     for (const event of events) {
       if (event.type !== "SUB_OUT" && event.type !== "SUB_IN") continue;
@@ -289,7 +290,7 @@ export default function GameDetailsPage() {
     const sameBatch = (a: StatEvent, b: StatEvent) => Math.abs(a.created_at - b.created_at) <= 5000;
     for (const group of groups.values()) {
       const waitingOuts: StatEvent[] = [];
-      for (const event of [...group].sort((a, b) => a.id - b.id)) {
+      for (const event of [...group].sort((a, b) => compareIds(a.id, b.id))) {
         if (event.type === "SUB_OUT") { waitingOuts.push(event); continue; }
         const index = waitingOuts.findIndex((out) => sameBatch(out, event));
         if (index === -1) continue;
@@ -305,8 +306,8 @@ export default function GameDetailsPage() {
   const togglePeriod = (period: number) => setCollapsedPeriods((old) => { const next = new Set(old); if (next.has(period)) next.delete(period); else next.add(period); return next; });
   // Running score after every play, computed over the full list so filters never change the scoreboard.
   const runningScores = useMemo(() => {
-    if (!game) return new Map<number, { away: number; home: number }>();
-    const scores = new Map<number, { away: number; home: number }>();
+    if (!game) return new Map<string, { away: number; home: number }>();
+    const scores = new Map<string, { away: number; home: number }>();
     let away = 0, home = 0;
     for (const event of orderedEvents) {
       if (isScoringPlay(event.type)) { if (event.team_id === game.away_id) away += event.value; else if (event.team_id === game.home_id) home += event.value; }
@@ -373,7 +374,7 @@ export default function GameDetailsPage() {
   const [payError, setPayError] = useState("");
   // Set once Stripe confirms the payment; the download waits until the game data has arrived.
   const pendingDownload = useRef(false);
-  const gameUuid = game?.uuid_id;
+  const gameUuid = game?.id;
   /** The statistics PDF: US Letter landscape, both box scores on one page whenever they fit. */
   const saveStatsPdf = async () => {
     if (!game) return;
@@ -442,7 +443,7 @@ export default function GameDetailsPage() {
     const res = await fetch("/api/pdf-checkout", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ game_uuid: game.uuid_id, title: game.title || `${teamName(game.away_id)} vs ${teamName(game.home_id)}` }),
+      body: JSON.stringify({ game_uuid: game.id, title: game.title || `${teamName(game.away_id)} vs ${teamName(game.home_id)}` }),
     });
     const json = await res.json().catch(() => ({}));
     if (json.url) window.location.href = json.url;
@@ -484,7 +485,7 @@ export default function GameDetailsPage() {
       setReplay(await replayFetch({
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ game_uuid: game.uuid_id, title: game.title || `${teamName(game.away_id)} vs ${teamName(game.home_id)}`, away: teamName(game.away_id), home: teamName(game.home_id), away_score: game.away_score, home_score: game.home_score, plays: playsText() }),
+        body: JSON.stringify({ game_uuid: game.id, title: game.title || `${teamName(game.away_id)} vs ${teamName(game.home_id)}`, away: teamName(game.away_id), home: teamName(game.home_id), away_score: game.away_score, home_score: game.home_score, plays: playsText() }),
       }));
     } catch (error) {
       setReplay({ status: "failed" });
@@ -556,7 +557,7 @@ export default function GameDetailsPage() {
     URL.revokeObjectURL(url);
   };
   return <RestShell current="games" title={t("Game details")} status={status} saving={saving} user={user} authReady={authReady}>
-    <div className="flex items-center justify-between gap-3"><Button asChild variant="ghost"><Link href="/games"><ArrowLeft className="size-4" />{t("Back to games")}</Link></Button>{game && <div className="flex items-center gap-2">{user && (game.access_role === "owner" || (!game.access_role && (!game.owner_id || game.owner_id === user.id))) && <Button onClick={() => setAccessOpen(true)}>{t("Add access")}</Button>}{canEnd && <Button variant="outline" className="whitespace-nowrap" onClick={() => setEndingOpen(true)}><Flag className="size-4" />{t("End")}</Button>}<Button variant="outline" onClick={exportJson}><Download className="size-4" />{t("Export")}</Button>{user && game.uuid_id && <Button variant="outline" className="whitespace-nowrap" onClick={downloadPdf}>{pdfPaid ? <BadgeCheck className="size-4 text-green-600" /> : <Download className="size-4" />}{pdfPaid ? t("Download PDF") : t("Download PDF ({price})", { price: PDF_PRICE_LABEL })}</Button>}{isOwner && game.uuid_id && replay && replay.status !== "ready" && <Button variant="outline" className="whitespace-nowrap" disabled={replayGenerating} onClick={generateVideo}><Clapperboard className="size-4" />{replayGenerating ? t("Generating Video…") : t("Generate Video")}</Button>}{replay?.status === "ready" && replay.video_url && <Button asChild variant="outline" className="whitespace-nowrap"><a href="#replay-video"><BadgeCheck className="size-4 text-green-600" />{t("Replay Video")}</a></Button>}</div>}</div>
+    <div className="flex items-center justify-between gap-3"><Button asChild variant="ghost"><Link href="/games"><ArrowLeft className="size-4" />{t("Back to games")}</Link></Button>{game && <div className="flex items-center gap-2">{user && (game.access_role === "owner" || (!game.access_role && (!game.owner_id || game.owner_id === user.id))) && <Button onClick={() => setAccessOpen(true)}>{t("Add access")}</Button>}{canEnd && <Button variant="outline" className="whitespace-nowrap" onClick={() => setEndingOpen(true)}><Flag className="size-4" />{t("End")}</Button>}<Button variant="outline" onClick={exportJson}><Download className="size-4" />{t("Export")}</Button>{user && <Button variant="outline" className="whitespace-nowrap" onClick={downloadPdf}>{pdfPaid ? <BadgeCheck className="size-4 text-green-600" /> : <Download className="size-4" />}{pdfPaid ? t("Download PDF") : t("Download PDF ({price})", { price: PDF_PRICE_LABEL })}</Button>}{isOwner && replay && replay.status !== "ready" && <Button variant="outline" className="whitespace-nowrap" disabled={replayGenerating} onClick={generateVideo}><Clapperboard className="size-4" />{replayGenerating ? t("Generating Video…") : t("Generate Video")}</Button>}{replay?.status === "ready" && replay.video_url && <Button asChild variant="outline" className="whitespace-nowrap"><a href="#replay-video"><BadgeCheck className="size-4 text-green-600" />{t("Replay Video")}</a></Button>}</div>}</div>
     {payError && <RestError>{payError}</RestError>}
     {(replayError || replay?.error) && <RestError>{replayError || replay?.error}</RestError>}
     {game && <ConfirmDialog open={payOpen} onOpenChange={setPayOpen} title={t("Download statistics PDF")} description={t("The statistics PDF for this game costs {price}, charged once per game through Stripe. After paying you come back here and the PDF downloads.", { price: PDF_PRICE_LABEL })} confirmLabel={t("Pay {price}", { price: PDF_PRICE_LABEL })} confirmVariant="default" onConfirm={startCheckout} />}
@@ -570,7 +571,7 @@ export default function GameDetailsPage() {
       <PeriodStats game={game} events={events} players={data.players} teamName={teamName} layout={statsLayout} />
       {replayGenerating && <Card className="print:hidden"><CardHeader><CardTitle>{t("Replay Video")}</CardTitle></CardHeader><CardContent className="text-sm text-muted-foreground">{t("Generating an AI highlight of this game. This usually takes one to three minutes; the video appears here when it is ready.")}</CardContent></Card>}
       {replay?.status === "ready" && replay.video_url && <Card id="replay-video" className="scroll-mt-24 print:hidden"><CardHeader><CardTitle>{t("Replay Video")}</CardTitle></CardHeader><CardContent><video controls playsInline preload="metadata" src={replay.video_url} className="aspect-video w-full rounded-md bg-black" /></CardContent></Card>}
-      {user && game.uuid_id && <HighlightsCard gameUuid={game.uuid_id} away={{ id: game.away_id, label: t("{team} (Away)", { team: teamName(game.away_id) }) }} home={{ id: game.home_id, label: t("{team} (Home)", { team: teamName(game.home_id) }) }} players={data.players} events={events} canEdit={canEdit} />}
+      {user && <HighlightsCard gameUuid={game.id} away={{ id: game.away_id, label: t("{team} (Away)", { team: teamName(game.away_id) }) }} home={{ id: game.home_id, label: t("{team} (Home)", { team: teamName(game.home_id) }) }} players={data.players} events={events} canEdit={canEdit} />}
       <Card><CardHeader className="flex-wrap gap-y-3"><CardTitle>{t("Play-by-play")} <span className="text-sm font-normal text-muted-foreground">{t("{count} total", { count: events.length })}{canEdit && orderedEvents.length > 0 ? ` · ${t("Click a play to edit it")}` : ""}</span></CardTitle>
         <div className="ml-auto flex flex-wrap items-center gap-1.5"><div className="flex flex-wrap gap-1.5" role="group" aria-label={t("Play filters")}>{playFilters.map((filter) => <Button key={filter.id} size="sm" variant={playFilter === filter.id ? "default" : "outline"} aria-pressed={playFilter === filter.id} onClick={() => setPlayFilter(filter.id)}>{t(filter.label)}</Button>)}</div>{orderedEvents.length > 0 && <Button size="sm" variant="outline" className="whitespace-nowrap" aria-label={t("Copy all plays")} onClick={copyPlays}>{copied ? <Check className="size-4" /> : <Copy className="size-4" />}{copied ? t("Copied") : t("Copy")}</Button>}</div>
       </CardHeader><CardContent className="px-0">

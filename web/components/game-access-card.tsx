@@ -63,7 +63,7 @@ export function GameAccessCard({ game, teams, userId, dialogOpen, onDialogOpenCh
   const subjectLabel = (permission: GamePermission) => permission.subject_type === "everyone" ? t("All signed-in users")
     : permission.subject_type === "user" ? permission.subject_email
     : permission.subject_type === "club" ? t("Club: {name}", { name: clubNames.get(permission.subject_club_id ?? "") ?? t("Unknown") })
-    : t("Team: {name}", { name: teamNames.get(permission.subject_team_id ?? -1) ?? t("Unknown") });
+    : t("Team: {name}", { name: teamNames.get(permission.subject_team_id ?? "") ?? t("Unknown") });
 
   function grant(event: FormEvent) {
     event.preventDefault();

@@ -1,4 +1,4 @@
-import { nextId } from "./local-id";
+import { newId } from "./local-id";
 import type { Game, Player, Snapshot, Team } from "./types";
 
 const gameExportKind = "hoopreplay.game";
@@ -6,7 +6,7 @@ const gameExportKind = "hoopreplay.game";
 export type GameExport = Record<string, unknown>;
 export type GameImport = {
   snapshot: Snapshot;
-  gameId: number;
+  gameId: string;
   events: number;
   createdTeams: number;
   createdPlayers: number;
@@ -23,7 +23,7 @@ const capitalizeInitial = (value: string) => {
 /** File name for a game's JSON export: HoopReplay_$HOME_$AWAY_$DATE_$TIMESTAMP.json, where DATE is the
  * game's scheduled day (yyyyMMdd) and TIMESTAMP is the export moment as yyyyMMdd_HHmmss. */
 export function exportGameFileName(snapshot: Snapshot, game: Game, now = new Date()): string {
-  const teamName = (id: number) => safeFileToken(snapshot.teams.find((team) => team.id === id)?.name || "Team");
+  const teamName = (id: string) => safeFileToken(snapshot.teams.find((team) => team.id === id)?.name || "Team");
   const pad = (n: number) => String(n).padStart(2, "0");
   const dayOf = (d: Date) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
   const stamp = `${dayOf(now)}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
@@ -35,11 +35,11 @@ function safeFileToken(text: string): string {
 
 /** Serializes one game in the same shape the Android and iOS apps write, so files move between platforms. */
 export function exportGameJson(snapshot: Snapshot, game: Game): GameExport {
-  const roster = (teamId: number) =>
+  const roster = (teamId: string) =>
     snapshot.players.filter((player) => player.team_id === teamId)
       .map((player) => ({ number: player.number, name: player.name }));
   const playerById = new Map(snapshot.players.map((player) => [player.id, player]));
-  const side = (teamId: number) => (teamId === game.home_id ? "HOME" : "AWAY");
+  const side = (teamId: string) => (teamId === game.home_id ? "HOME" : "AWAY");
   return {
     kind: gameExportKind,
     schemaVersion: 1,
@@ -91,14 +91,14 @@ export function importGameJson(snapshot: Snapshot, raw: unknown): GameImport {
   let createdTeams = 0;
   let createdPlayers = 0;
 
-  const findPlayer = (teamId: number, name: string, number: string) => {
+  const findPlayer = (teamId: string, name: string, number: string) => {
     const roster = players.filter((player) => player.team_id === teamId);
     return number
       ? roster.find((player) => player.number.trim() === number)
       : roster.find((player) => !player.number.trim() && name && player.name.toLowerCase() === name.toLowerCase());
   };
-  const addPlayer = (teamId: number, name: string, number: string) => {
-    const player: Player = { id: nextId(players), team_id: teamId, name: capitalizeInitial(name), number };
+  const addPlayer = (teamId: string, name: string, number: string) => {
+    const player: Player = { id: newId(), team_id: teamId, name: capitalizeInitial(name), number };
     players.push(player);
     createdPlayers += 1;
     return player;
@@ -107,7 +107,7 @@ export function importGameJson(snapshot: Snapshot, raw: unknown): GameImport {
     const side = (raw ?? {}) as Record<string, unknown>;
     const name = capitalizeInitial(clean(side.name) || "Unnamed");
     const existing = teams.find((team) => team.name.toLowerCase() === name.toLowerCase());
-    const team = existing ?? { id: nextId(teams), name, created_at: Date.now() };
+    const team = existing ?? { id: newId(), name, created_at: Date.now() };
     if (!existing) {
       teams.push(team);
       createdTeams += 1;
@@ -125,7 +125,7 @@ export function importGameJson(snapshot: Snapshot, raw: unknown): GameImport {
   const awayId = resolveTeam(source.away);
   const periodDurationMs = Number(meta.periodDurationMs ?? 480_000);
   const game: Game = {
-    id: nextId(snapshot.games),
+    id: newId(),
     title: clean(meta.title) || "Imported game",
     home_id: homeId,
     away_id: awayId,
@@ -151,7 +151,7 @@ export function importGameJson(snapshot: Snapshot, raw: unknown): GameImport {
       ? undefined
       : findPlayer(teamId, name, number) ?? addPlayer(teamId, name, number);
     events.push({
-      id: nextId(events),
+      id: newId(),
       game_id: game.id,
       team_id: teamId,
       player_id: player?.id ?? null,

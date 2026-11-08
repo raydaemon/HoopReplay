@@ -1,5 +1,5 @@
 import type { Game, Player, Snapshot, StatEvent } from "./types";
-import { nextId } from "./local-id";
+import { compareIds, newId } from "./local-id";
 import { comparePlayers } from "./player-sort";
 
 /** Types that move the scoreboard: made shots, free throws, and manual +1/-1 adjustments. */
@@ -17,7 +17,7 @@ export const playerLabel = (player: Pick<Player, "name" | "number">) => {
 export type GameMoment = { period: number; ms: number };
 
 /** Chronological order of plays: by period, then remaining clock counting down, then insertion. */
-export const comparePlays = (a: StatEvent, b: StatEvent) => a.period - b.period || b.game_clock_ms - a.game_clock_ms || a.id - b.id;
+export const comparePlays = (a: StatEvent, b: StatEvent) => a.period - b.period || b.game_clock_ms - a.game_clock_ms || compareIds(a.id, b.id);
 
 /** True when the play happened at or before the moment (a countdown clock, so a larger ms is earlier). */
 export const playedBy = (event: StatEvent, at: GameMoment) => event.period < at.period || (event.period === at.period && event.game_clock_ms >= at.ms);
@@ -26,8 +26,8 @@ export const playedBy = (event: StatEvent, at: GameMoment) => event.period < at.
  * The players recorded as this team's starters for a period, in first-appearance order. Reverted
  * events must already be filtered out by the caller.
  */
-export function periodStarters(events: StatEvent[], teamId: number, period: number) {
-  const starters: number[] = [];
+export function periodStarters(events: StatEvent[], teamId: string, period: number) {
+  const starters: string[] = [];
   for (const event of [...events].sort(comparePlays)) {
     if (event.team_id !== teamId || event.period !== period || event.type !== "STARTER" || event.player_id === null) continue;
     if (!starters.includes(event.player_id)) starters.push(event.player_id);
@@ -45,9 +45,9 @@ export function periodStarters(events: StatEvent[], teamId: number, period: numb
  * it inherited. Treating "every player with a recorded stat" as the lineup never takes anyone off
  * it, so a team could show more than five players.
  */
-export function lineupOf(events: StatEvent[], roster: Player[], teamId: number, at?: GameMoment) {
+export function lineupOf(events: StatEvent[], roster: Player[], teamId: string, at?: GameMoment) {
   const ids = new Set(roster.map((player) => player.id));
-  const onCourt = new Set<number>();
+  const onCourt = new Set<string>();
   const ordered = [...events].sort(comparePlays);
   const periodsWithStarters = new Set(ordered.filter((event) => event.team_id === teamId && event.type === "STARTER" && event.player_id !== null && ids.has(event.player_id)).map((event) => event.period));
   let period: number | null = null;
@@ -82,7 +82,7 @@ export function playerGridSlots(players: Player[]) {
   return slots;
 }
 
-export type PlayRequest = { teamId: number; player: Player | null; type: string; value: number; points?: number };
+export type PlayRequest = { teamId: string; player: Player | null; type: string; value: number; points?: number };
 
 /**
  * Appends one action's plays to the snapshot in order. A STARTER can only happen at the start of a
@@ -99,9 +99,9 @@ export function applyPlays(draft: Snapshot, game: Game, plays: PlayRequest[]): S
   const clock = game.clock_remaining_ms;
   // One timestamp for the whole batch: multi-player substitutions are paired later by created_at.
   const createdAt = Date.now();
-  const add = (teamId: number, player: Player | null, type: string, value: number) => {
+  const add = (teamId: string, player: Player | null, type: string, value: number) => {
     const event: StatEvent = {
-      id: nextId(events), game_id: game.id, team_id: teamId, player_id: player?.id ?? null,
+      id: newId(), game_id: game.id, team_id: teamId, player_id: player?.id ?? null,
       owner_id: game.owner_id, cloud_sync_space: game.cloud_sync_space,
       type, value, period, game_clock_ms: type === "STARTER" ? game.period_duration_ms : clock,
       segment: 0, segment_time_ms: 0, final_video_time_ms: 0, reverted: 0, created_at: createdAt,
@@ -126,7 +126,7 @@ export function applyPlays(draft: Snapshot, game: Game, plays: PlayRequest[]): S
   };
 }
 
-/** A new roster entry for the team; the id is allocated against the current roster. */
-export function newPlayer(players: Player[], teamId: number, name: string, number: string): Player {
-  return { id: nextId(players), team_id: teamId, name: name.trim(), number: number.trim() };
+/** A new roster entry for the team; the id is a fresh UUIDv7. */
+export function newPlayer(players: Player[], teamId: string, name: string, number: string): Player {
+  return { id: newId(), team_id: teamId, name: name.trim(), number: number.trim() };
 }
