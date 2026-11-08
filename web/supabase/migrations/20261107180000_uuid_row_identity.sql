@@ -318,7 +318,8 @@ begin
     new.raw_app_meta_data := coalesce(new.raw_app_meta_data, '{}'::jsonb) || '{"email_proven": true}'::jsonb;
   end if;
   if new.email is distinct from old.email then
-    new.raw_app_meta_data := coalesce(new.raw_app_meta_data, '{}'::jsonb) - 'email_proven';
+    -- A new address is a new owner to prove: the OAuth claim on the old one no longer counts.
+    new.raw_app_meta_data := coalesce(new.raw_app_meta_data, '{}'::jsonb) - 'email_proven' - 'oauth_claimed';
     if new.email_confirmed_at is not null and new.email_change = '' and old.email_change <> '' then
       -- Supabase applies a confirmed email change by rewriting email: the new address was proven.
       new.raw_app_meta_data := new.raw_app_meta_data || '{"email_proven": true}'::jsonb;

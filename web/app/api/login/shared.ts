@@ -148,16 +148,15 @@ export async function mintSession({ email, name }: { email: string; name: string
   // the address's owner to the account, any earlier password stops working and every other
   // session is revoked. (A legitimate password user resets it once through "Forgot password".)
   const existing = link.data.user;
-  const takeOver = !created.data.user && existing && existing.app_metadata?.oauth_claimed !== true;
+  // Both flags are dropped on any email change (private.mark_email_proven), so an account whose
+  // address was switched to this one is taken over too, never just re-marked as proven.
+  const takeOver = !created.data.user && existing
+    && !(existing.app_metadata?.oauth_claimed === true && existing.app_metadata?.email_proven === true);
   if (takeOver) {
     const reset = await admin.auth.admin.updateUserById(existing.id, {
       password: randomUUID() + randomUUID(), email_confirm: true, app_metadata: { ...existing.app_metadata, ...proven },
     });
     if (reset.error) throw new Error(reset.error.message);
-  } else if (!created.data.user && existing && existing.app_metadata?.email_proven !== true) {
-    // Claimed earlier, but the flag was dropped since (e.g. an email change): the provider re-proved it.
-    const mark = await admin.auth.admin.updateUserById(existing.id, { app_metadata: { ...existing.app_metadata, email_proven: true } });
-    if (mark.error) throw new Error(mark.error.message);
   }
   const { data, error } = await createClient(url, env("NEXT_PUBLIC_SUPABASE_ANON_KEY"), options)
     .auth.verifyOtp({ type: "magiclink", token_hash: tokenHash });

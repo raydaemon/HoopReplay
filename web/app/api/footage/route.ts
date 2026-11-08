@@ -78,8 +78,6 @@ export async function PUT(req: Request) {
   if (!Number.isInteger(sequence) || sequence <= 0 || typeof body.upload_id !== "string" || parts.length === 0) return Response.json({ error: "Invalid upload." }, { status: 400 });
   const { admin, gameUuid, gameRows } = ctx;
   const key = footageKey(gameUuid, sequence);
-  const xml = `<CompleteMultipartUpload>${parts.sort((a: { number: number }, b: { number: number }) => a.number - b.number)
-    .map((p: { number: number; etag: string }) => `<Part><PartNumber>${p.number}</PartNumber><ETag>${p.etag.replace(/[<>&]/g, "")}</ETag></Part>`).join("")}</CompleteMultipartUpload>`;
   try {
     // Check what R2 actually holds before completing: every part at most PART_SIZE, the total
     // within MAX_SEGMENT_BYTES. An oversized upload is aborted so its parts are freed.
@@ -90,7 +88,16 @@ export async function PUT(req: Request) {
       await call("DELETE", key, { query: { uploadId: body.upload_id } }).catch(() => {});
       throw new Error("The recording is too large.");
     }
+    // Complete with the ETags R2 listed above, not the client's: a part re-uploaded after the size
+    // check no longer matches its listed ETag, so R2 rejects the completion.
+    const xml = `<CompleteMultipartUpload>${[...held].sort(([a], [b]) => a - b)
+      .map(([number, { etag }]) => `<Part><PartNumber>${number}</PartNumber><ETag>${etag.replace(/[<>&]/g, "")}</ETag></Part>`).join("")}</CompleteMultipartUpload>`;
     await call("POST", key, { query: { uploadId: body.upload_id }, body: xml, headers: { "content-type": "application/xml" } });
+    const head = await call("HEAD", key);
+    if (!head.ok || !(Number(head.headers.get("content-length")) <= MAX_SEGMENT_BYTES)) {
+      await call("DELETE", key).catch(() => {});
+      throw new Error("The recording is too large.");
+    }
     const { error } = await admin.from("hoop_segments").update({ object_key: key, upload_status: "uploaded" }).match(gameRows).eq("sequence", sequence);
     if (error) throw new Error(error.message);
     return Response.json({ object_key: key });

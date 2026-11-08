@@ -19,10 +19,14 @@ export const maxDuration = 300;
  * Phones write the mp4 index (moov) at the end of the file, and browsers will not start a
  * presigned R2 video until they have it. Remux in place without re-encoding so it leads.
  */
-async function faststart(key: string) {
+async function faststart(key: string, etag: string) {
   const out = path.join(tmpdir(), `${randomUUID()}.mp4`);
   try {
-    await promisify(execFile)(ffmpegPath!, ["-v", "error", "-y", ...UNTRUSTED_INPUT, "-i", await presign("GET", key), "-c", "copy", "-movflags", "+faststart", out]);
+    await promisify(execFile)(ffmpegPath!, ["-v", "error", "-y", ...UNTRUSTED_INPUT,
+      // Read exactly the object whose size was checked: if it is replaced after the HEAD, the ETag
+      // no longer matches and R2 refuses the read. -fs caps what is written (and read back) here.
+      "-headers", `If-Match: ${etag}\r\n`, "-i", await presign("GET", key),
+      "-c", "copy", "-movflags", "+faststart", "-fs", String(MAX_HIGHLIGHT_BYTES), out]);
     await call("PUT", key, { body: await readFile(out), headers: { "content-type": "video/mp4" } });
   } finally {
     await rm(out, { force: true });
@@ -66,7 +70,9 @@ export async function PUT(req: Request) {
     return Response.json({ error: "The video is too large." }, { status: 413 });
   }
   try {
-    await faststart(key);
+    const etag = head.headers.get("etag");
+    if (!etag) throw new Error("Could not finish the video.");
+    await faststart(key, etag);
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Could not finish the video." }, { status: 502 });
   }
