@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>6.10.2901</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.hoopreplay.ios</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>hoopreplay</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>6102901</string>
+	<key>HOOPREPLAY_SUPABASE_ANON_KEY</key>
+	<string>$(HOOPREPLAY_SUPABASE_ANON_KEY)</string>
+	<key>HOOPREPLAY_SUPABASE_URL</key>
+	<string>$(HOOPREPLAY_SUPABASE_URL)</string>
+	<key>HOOPREPLAY_SYNC_SPACE</key>
+	<string>$(HOOPREPLAY_SYNC_SPACE)</string>
+	<key>HOOPREPLAY_WEB_URL</key>
+	<string>https://hoopreplay-tawny.vercel.app/</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>HoopReplay records game video with the camera.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>HoopReplay records game audio with the microphone.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>HoopReplay saves finished game recordings to your Photos library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>HoopReplay reads your game recordings from Photos to cut player and team highlight videos.</string>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UIRequiresFullScreen</key>
+	<true/>
+</dict>
+</plist>

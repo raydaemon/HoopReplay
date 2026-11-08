@@ -1,0 +1,556 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		020945BF7FEA4C5B00E4D8CF /* HoopReplayUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DEAD985F10465DBECB9BF7F /* HoopReplayUITests.swift */; };
+		063B03A5DF1E26DB39FCE8E7 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BBA9DCE5946A19FCAF657CD /* Models.swift */; };
+		248FD85910264E23F4A8BF2C /* GameModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A04E35015910CD0073B4FBC /* GameModelTests.swift */; };
+		431757D22A1647E15E7C7B3D /* LiveDialogs.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB0D75C5BBD60D0E785C5900 /* LiveDialogs.swift */; };
+		4BE270D36CD45D77104FBE7E /* GameDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376680E8BB60607554B3933A /* GameDetailView.swift */; };
+		5794BF2BE525E37D34499FA4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C52A6CDFC51927B1416534E1 /* Assets.xcassets */; };
+		602A833CCA93BDE9AA22921A /* HoopReplayApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 728DC9B31D18966502DAD18C /* HoopReplayApp.swift */; };
+		6499FBBAE904E34ADD782068 /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00511157CC6AACBDBF4A3A1C /* RecordingView.swift */; };
+		99455AD2084EC5BA894A33A7 /* GamePortability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F48ED512AD98FC2EC564BD0 /* GamePortability.swift */; };
+		A8ECD7EE5B5F1EEC4303E885 /* SyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2DF31E622FF5B44340A5D0D /* SyncService.swift */; };
+		CED01AAB54811AF7B9075B8C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25C3524776CAC51A76DD5E66 /* ContentView.swift */; };
+		F770BE24A69E28AAFC8F5917 /* GuideTourUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A966F203F24BD563FAED4F85 /* GuideTourUITests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		319482C66D9AF3B0E2581F70 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5F058360DD39F2BBCBA45566 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8D0819290003AEE168D1C4B7;
+			remoteInfo = HoopReplay;
+		};
+		EA34A52C6EE5B8428A3D1A55 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5F058360DD39F2BBCBA45566 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8D0819290003AEE168D1C4B7;
+			remoteInfo = HoopReplay;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		00511157CC6AACBDBF4A3A1C /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
+		0A04E35015910CD0073B4FBC /* GameModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameModelTests.swift; sourceTree = "<group>"; };
+		219FEE3BDF682CFAD0C41716 /* HoopReplayUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HoopReplayUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		25C3524776CAC51A76DD5E66 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		2BBA9DCE5946A19FCAF657CD /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		2E504061F7825D7CA415D695 /* HoopReplayTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HoopReplayTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		376680E8BB60607554B3933A /* GameDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameDetailView.swift; sourceTree = "<group>"; };
+		54A917C58F5A7B2CFB69CD16 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		5F48ED512AD98FC2EC564BD0 /* GamePortability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GamePortability.swift; sourceTree = "<group>"; };
+		728DC9B31D18966502DAD18C /* HoopReplayApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoopReplayApp.swift; sourceTree = "<group>"; };
+		7DEAD985F10465DBECB9BF7F /* HoopReplayUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoopReplayUITests.swift; sourceTree = "<group>"; };
+		9CAD622CF58190C2E9D2F604 /* HoopReplay.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HoopReplay.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A966F203F24BD563FAED4F85 /* GuideTourUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuideTourUITests.swift; sourceTree = "<group>"; };
+		C2DF31E622FF5B44340A5D0D /* SyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncService.swift; sourceTree = "<group>"; };
+		C52A6CDFC51927B1416534E1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		CB0D75C5BBD60D0E785C5900 /* LiveDialogs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveDialogs.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		8429CAF59EDE7379F825EBAA /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				9CAD622CF58190C2E9D2F604 /* HoopReplay.app */,
+				2E504061F7825D7CA415D695 /* HoopReplayTests.xctest */,
+				219FEE3BDF682CFAD0C41716 /* HoopReplayUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		9679FE9625282CFAAE14A445 /* HoopReplayUITests */ = {
+			isa = PBXGroup;
+			children = (
+				A966F203F24BD563FAED4F85 /* GuideTourUITests.swift */,
+				7DEAD985F10465DBECB9BF7F /* HoopReplayUITests.swift */,
+			);
+			name = HoopReplayUITests;
+			path = ../HoopReplayUITests;
+			sourceTree = "<group>";
+		};
+		B4CB57B7CA67177B6C70E8EA /* HoopReplay */ = {
+			isa = PBXGroup;
+			children = (
+				C52A6CDFC51927B1416534E1 /* Assets.xcassets */,
+				25C3524776CAC51A76DD5E66 /* ContentView.swift */,
+				376680E8BB60607554B3933A /* GameDetailView.swift */,
+				5F48ED512AD98FC2EC564BD0 /* GamePortability.swift */,
+				728DC9B31D18966502DAD18C /* HoopReplayApp.swift */,
+				54A917C58F5A7B2CFB69CD16 /* Info.plist */,
+				CB0D75C5BBD60D0E785C5900 /* LiveDialogs.swift */,
+				2BBA9DCE5946A19FCAF657CD /* Models.swift */,
+				00511157CC6AACBDBF4A3A1C /* RecordingView.swift */,
+				C2DF31E622FF5B44340A5D0D /* SyncService.swift */,
+			);
+			name = HoopReplay;
+			path = ../HoopReplay;
+			sourceTree = "<group>";
+		};
+		D496B5C2E2A01BD21F25A021 /* HoopReplayTests */ = {
+			isa = PBXGroup;
+			children = (
+				0A04E35015910CD0073B4FBC /* GameModelTests.swift */,
+			);
+			name = HoopReplayTests;
+			path = ../HoopReplayTests;
+			sourceTree = "<group>";
+		};
+		D77A1FCE64E79AE0E80311D7 = {
+			isa = PBXGroup;
+			children = (
+				B4CB57B7CA67177B6C70E8EA /* HoopReplay */,
+				D496B5C2E2A01BD21F25A021 /* HoopReplayTests */,
+				9679FE9625282CFAAE14A445 /* HoopReplayUITests */,
+				8429CAF59EDE7379F825EBAA /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0BFEF65E5CECAD14A8D3BF7D /* HoopReplayUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1DBA6EC02DFA5D5DDDDACFEC /* Build configuration list for PBXNativeTarget "HoopReplayUITests" */;
+			buildPhases = (
+				444F1577678A2D1A3C5E0FEA /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				07177B9873BFF0665491C7C2 /* PBXTargetDependency */,
+			);
+			name = HoopReplayUITests;
+			packageProductDependencies = (
+			);
+			productName = HoopReplayUITests;
+			productReference = 219FEE3BDF682CFAD0C41716 /* HoopReplayUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		8D0819290003AEE168D1C4B7 /* HoopReplay */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 49D6373D53409DEEF446D9AC /* Build configuration list for PBXNativeTarget "HoopReplay" */;
+			buildPhases = (
+				EC942B11D25E7B6EAA61B91C /* Sources */,
+				B7DE1D05271C497D55EAA338 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HoopReplay;
+			packageProductDependencies = (
+			);
+			productName = HoopReplay;
+			productReference = 9CAD622CF58190C2E9D2F604 /* HoopReplay.app */;
+			productType = "com.apple.product-type.application";
+		};
+		CA63CD2E61AB6D8190EB8E46 /* HoopReplayTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9494A2C891214D5757F2839F /* Build configuration list for PBXNativeTarget "HoopReplayTests" */;
+			buildPhases = (
+				BCD0F5A057DD8512C58EE797 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				5AD54E236C08DBB6C27634C8 /* PBXTargetDependency */,
+			);
+			name = HoopReplayTests;
+			packageProductDependencies = (
+			);
+			productName = HoopReplayTests;
+			productReference = 2E504061F7825D7CA415D695 /* HoopReplayTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		5F058360DD39F2BBCBA45566 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					0BFEF65E5CECAD14A8D3BF7D = {
+						DevelopmentTeam = 538QL62JD5;
+						TestTargetID = 8D0819290003AEE168D1C4B7;
+					};
+					8D0819290003AEE168D1C4B7 = {
+						DevelopmentTeam = 538QL62JD5;
+					};
+					CA63CD2E61AB6D8190EB8E46 = {
+						DevelopmentTeam = 538QL62JD5;
+					};
+				};
+			};
+			buildConfigurationList = 481A8699D35B3F12AF2F2F82 /* Build configuration list for PBXProject "HoopReplay" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = D77A1FCE64E79AE0E80311D7;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 8429CAF59EDE7379F825EBAA /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				8D0819290003AEE168D1C4B7 /* HoopReplay */,
+				CA63CD2E61AB6D8190EB8E46 /* HoopReplayTests */,
+				0BFEF65E5CECAD14A8D3BF7D /* HoopReplayUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		B7DE1D05271C497D55EAA338 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5794BF2BE525E37D34499FA4 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		444F1577678A2D1A3C5E0FEA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F770BE24A69E28AAFC8F5917 /* GuideTourUITests.swift in Sources */,
+				020945BF7FEA4C5B00E4D8CF /* HoopReplayUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BCD0F5A057DD8512C58EE797 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				248FD85910264E23F4A8BF2C /* GameModelTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EC942B11D25E7B6EAA61B91C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CED01AAB54811AF7B9075B8C /* ContentView.swift in Sources */,
+				4BE270D36CD45D77104FBE7E /* GameDetailView.swift in Sources */,
+				99455AD2084EC5BA894A33A7 /* GamePortability.swift in Sources */,
+				602A833CCA93BDE9AA22921A /* HoopReplayApp.swift in Sources */,
+				431757D22A1647E15E7C7B3D /* LiveDialogs.swift in Sources */,
+				063B03A5DF1E26DB39FCE8E7 /* Models.swift in Sources */,
+				6499FBBAE904E34ADD782068 /* RecordingView.swift in Sources */,
+				A8ECD7EE5B5F1EEC4303E885 /* SyncService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		07177B9873BFF0665491C7C2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8D0819290003AEE168D1C4B7 /* HoopReplay */;
+			targetProxy = 319482C66D9AF3B0E2581F70 /* PBXContainerItemProxy */;
+		};
+		5AD54E236C08DBB6C27634C8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8D0819290003AEE168D1C4B7 /* HoopReplay */;
+			targetProxy = EA34A52C6EE5B8428A3D1A55 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		43C514D5E224D8C8E89AFC63 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = 538QL62JD5;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hoopreplay.ios.uitests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = HoopReplay;
+			};
+			name = Debug;
+		};
+		53C167D223DB24CE520957A4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 538QL62JD5;
+				INFOPLIST_FILE = HoopReplay/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hoopreplay.ios;
+				PRODUCT_NAME = HoopReplay;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		6776BFBA9FFF4F364BB8B629 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = 538QL62JD5;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hoopreplay.ios.uitests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = HoopReplay;
+			};
+			name = Release;
+		};
+		703C7E3C4FFDA8306FAB0005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_ALLOWED = YES;
+				DEVELOPMENT_TEAM = 538QL62JD5;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hoopreplay.ios.tests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HoopReplay.app/HoopReplay";
+			};
+			name = Debug;
+		};
+		78EDAECBE3CE83B2600532BE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 538QL62JD5;
+				INFOPLIST_FILE = HoopReplay/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hoopreplay.ios;
+				PRODUCT_NAME = HoopReplay;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		8582A6E0985DD167047B579F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		9F16E6CBB7D87DA026AC4088 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		EBD3FBD4965693C9B9F26F89 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_ALLOWED = YES;
+				DEVELOPMENT_TEAM = 538QL62JD5;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hoopreplay.ios.tests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HoopReplay.app/HoopReplay";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1DBA6EC02DFA5D5DDDDACFEC /* Build configuration list for PBXNativeTarget "HoopReplayUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				43C514D5E224D8C8E89AFC63 /* Debug */,
+				6776BFBA9FFF4F364BB8B629 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		481A8699D35B3F12AF2F2F82 /* Build configuration list for PBXProject "HoopReplay" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9F16E6CBB7D87DA026AC4088 /* Debug */,
+				8582A6E0985DD167047B579F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		49D6373D53409DEEF446D9AC /* Build configuration list for PBXNativeTarget "HoopReplay" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				78EDAECBE3CE83B2600532BE /* Debug */,
+				53C167D223DB24CE520957A4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9494A2C891214D5757F2839F /* Build configuration list for PBXNativeTarget "HoopReplayTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				703C7E3C4FFDA8306FAB0005 /* Debug */,
+				EBD3FBD4965693C9B9F26F89 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 5F058360DD39F2BBCBA45566 /* Project object */;
+}
