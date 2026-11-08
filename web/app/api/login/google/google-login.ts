@@ -3,7 +3,7 @@
 // token server-side, and a Supabase session is minted for that email (see ../shared.ts).
 import { NextResponse } from "next/server";
 
-import { APP_REDIRECT, codeChallenge, env, finishRedirect, mintSession, readCookie, redirectTarget, sessionFragment } from "../shared";
+import { APP_REDIRECT, codeChallenge, env, finishRedirect, mintSession, NO_CHALLENGE, readCookie, redirectTarget, sessionFragment } from "../shared";
 
 const COOKIE = { name: "google_login", path: "/api/login/google" };
 
@@ -43,6 +43,7 @@ export async function finishGoogleLogin(req: Request) {
   const error = url.searchParams.get("error");
   if (error) return fail(error);
   if (!saved || url.searchParams.get("state") !== saved.state) return fail("State mismatch");
+  if (!saved.challenge) return fail(NO_CHALLENGE);
   const code = url.searchParams.get("code");
   if (!code) return fail("No code");
   try {

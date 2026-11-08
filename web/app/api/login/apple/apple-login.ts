@@ -5,7 +5,7 @@
 import { createPublicKey, verify } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { APP_REDIRECT, codeChallenge, finishRedirect, mintSession, readCookie, redirectTarget, sessionFragment } from "../shared";
+import { APP_REDIRECT, codeChallenge, finishRedirect, mintSession, NO_CHALLENGE, readCookie, redirectTarget, sessionFragment } from "../shared";
 
 const COOKIE = { name: "apple_login", path: "/api/login/apple" };
 /**
@@ -53,6 +53,7 @@ export async function finishAppleLogin(req: Request) {
   const error = form.get("error");
   if (error) return fail(error === "user_cancelled_authorize" ? "Sign in was cancelled" : String(error));
   if (!saved || form.get("state") !== saved.state) return fail("State mismatch");
+  if (!saved.challenge) return fail(NO_CHALLENGE);
   const idToken = form.get("id_token");
   if (typeof idToken !== "string" || !idToken) return fail("No id_token");
   try {

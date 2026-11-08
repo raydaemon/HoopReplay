@@ -1,7 +1,8 @@
 // One AI replay video per game through the Gemini API: Flash turns the play-by-play into a Veo
 // prompt, Veo renders an 8-second clip, and the finished mp4 is copied into Supabase Storage
 // (Google keeps it only two days). POST starts a generation, GET reports and advances it.
-import { caller, env } from "../login/shared";
+import { caller, env, reserveUsage } from "../login/shared";
+import { isUuid } from "../highlights/shared";
 import {
   GEMINI_API, GENERATION_TIMEOUT_MS, PROMPT_MODEL, VIDEO_MODEL,
   operationState, promptFromResponse, promptRequest, videoRequest,
@@ -13,6 +14,8 @@ export const maxDuration = 120;
 const BUCKET = "replay-videos";
 /** A failing game may be retried this many times in total; Veo renders cost real money. */
 const MAX_ATTEMPTS = 3;
+/** Renders one user may start per day (UTC) across all their games: games are free to create. */
+const DAILY_RENDERS = 3;
 const SIGNED_URL_SECONDS = 60 * 60;
 
 async function gemini(path: string, body?: unknown) {
@@ -30,8 +33,8 @@ async function gemini(path: string, body?: unknown) {
 async function context(req: Request, gameUuid: string) {
   const { user, admin, asUser } = await caller(req);
   if (!user) return { error: Response.json({ error: "Sign in first." }, { status: 401 }) };
-  if (!/^[\w-]{1,64}$/.test(gameUuid)) return { error: Response.json({ error: "Invalid game." }, { status: 400 }) };
-  const { data: game } = await asUser.from("hoop_accessible_games").select("uuid_id, access_role").eq("uuid_id", gameUuid).maybeSingle();
+  if (!isUuid(gameUuid)) return { error: Response.json({ error: "Invalid game." }, { status: 400 }) };
+  const { data: game } = await asUser.from("hoop_accessible_games").select("id, access_role").eq("id", gameUuid).maybeSingle();
   if (!game) return { error: Response.json({ error: "Game not found." }, { status: 404 }) };
   const { data: row } = await admin.from("hoop_replay_videos").select("*").eq("game_uuid", gameUuid).maybeSingle();
   return { user, admin, game, row: row as Row | null };
@@ -65,16 +68,32 @@ export async function POST(req: Request) {
     awayScore: Number(body.away_score) || 0, homeScore: Number(body.home_score) || 0, plays: String(body.plays ?? ""),
   };
   try {
-    const prompt = promptFromResponse(await gemini(`models/${PROMPT_MODEL}:generateContent`, promptRequest(input)));
-    if (!prompt) throw new Error("Gemini returned no prompt.");
-    const operation = await gemini(`models/${VIDEO_MODEL}:predictLongRunning`, videoRequest(prompt));
-    const next: Row & { game_uuid: string; user_id: string; prompt: string; updated_at: string } = {
-      game_uuid: gameUuid, user_id: user.id, status: "generating", operation_name: operation.name, prompt, video_url: null, error: null,
-      attempts: (row?.attempts ?? 0) + 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-    };
-    const { error } = await admin.from("hoop_replay_videos").upsert(next, { onConflict: "game_uuid" });
-    if (error) throw new Error(error.message);
-    return Response.json(await publicRow(admin, gameUuid, next));
+    if (!(await reserveUsage(admin, user.id, "replay_video", 1, DAILY_RENDERS))) {
+      return Response.json({ error: "Daily replay video limit reached. Try again tomorrow." }, { status: 429 });
+    }
+    // Claim the attempt before any paid call: the conditional upsert lets one request through per
+    // attempt, so parallel POSTs cannot start several renders (see 20261107190000_usage_quotas.sql).
+    const { data: attempt, error: claimError } = await admin.rpc("hoop_reserve_replay_attempt", { p_game: gameUuid, p_user: user.id, p_max: MAX_ATTEMPTS });
+    if (claimError) throw new Error(claimError.message);
+    if (attempt == null) {
+      const { data: current } = await admin.from("hoop_replay_videos").select("*").eq("game_uuid", gameUuid).maybeSingle();
+      return current && (current as Row).status !== "failed"
+        ? Response.json(await publicRow(admin, gameUuid, current as Row))
+        : Response.json({ error: "This game has reached its replay video limit." }, { status: 429 });
+    }
+    try {
+      const prompt = promptFromResponse(await gemini(`models/${PROMPT_MODEL}:generateContent`, promptRequest(input)));
+      if (!prompt) throw new Error("Gemini returned no prompt.");
+      const operation = await gemini(`models/${VIDEO_MODEL}:predictLongRunning`, videoRequest(prompt));
+      const patch = { operation_name: operation.name as string, prompt, updated_at: new Date().toISOString() };
+      const { data: saved, error } = await admin.from("hoop_replay_videos").update(patch).eq("game_uuid", gameUuid).select("*").single();
+      if (error) throw new Error(error.message);
+      return Response.json(await publicRow(admin, gameUuid, saved as Row));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not start the video.";
+      await admin.from("hoop_replay_videos").update({ status: "failed", error: message, updated_at: new Date().toISOString() }).eq("game_uuid", gameUuid);
+      throw error;
+    }
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Could not start the video." }, { status: 502 });
   }
@@ -86,6 +105,14 @@ export async function GET(req: Request) {
   if ("error" in ctx) return ctx.error;
   const { admin, row } = ctx;
   if (!row || row.status !== "generating") return Response.json(await publicRow(admin, gameUuid, row));
+  // A POST has claimed the attempt but not yet started the render: wait, unless it died.
+  if (!row.operation_name) {
+    if (Date.now() - Date.parse(row.created_at) > GENERATION_TIMEOUT_MS) {
+      await admin.from("hoop_replay_videos").update({ status: "failed", error: "Video generation timed out.", updated_at: new Date().toISOString() }).eq("game_uuid", gameUuid);
+      return Response.json(await publicRow(admin, gameUuid, { ...row, status: "failed", error: "Video generation timed out." }));
+    }
+    return Response.json(await publicRow(admin, gameUuid, row));
+  }
   const update = async (patch: Partial<Row>) => {
     await admin.from("hoop_replay_videos").update({ ...patch, updated_at: new Date().toISOString() }).eq("game_uuid", gameUuid);
     return Response.json(await publicRow(admin, gameUuid, { ...row, ...patch }));

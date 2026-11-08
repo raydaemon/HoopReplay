@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import ffmpegPath from "ffmpeg-static";
 import { highlightClips, type Clip, type ClipEvent, type HighlightTarget } from "@/lib/highlight-clips";
 import { call, exists, presign } from "@/lib/r2";
+import { reserveUsage } from "../login/shared";
 import { footageKey, gameContext, publicHighlight, saveHighlight, UNTRUSTED_INPUT, validTarget, type HighlightRow } from "./shared";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +20,23 @@ export const maxDuration = 300;
 const run = promisify(execFile);
 /** Stop starting new clips this long into a request; the function limit is 300 s. */
 const CUT_BUDGET_MS = 200_000;
-/** Worst-case time to cut one clip on Vercel (~28 s measured for 4K → 720p). */
+/** Worst-case time to cut one piece of at most PIECE_MS on Vercel (~28 s measured for a 10 s 4K → 720p clip). */
 const CLIP_COST_MS = 45_000;
+/** Clips are cut in pieces no longer than this, so one ffmpeg run fits CLIP_COST_MS. */
+const PIECE_MS = 12_000;
+/** Longest highlight the cloud will cut; dense plays merge into long clips. */
+const MAX_HIGHLIGHT_MS = 5 * 60_000;
+/** Time the join (download every piece, concat, upload) needs; a later call joins when less is left. */
+const JOIN_COST_MS = 90_000;
+/** Seconds of footage one user may have cut in the cloud per day; cached pieces cost nothing. */
+const DAILY_CUT_SECONDS = 2 * 60 * 60;
+
+/** Splits clips into back-to-back pieces of at most PIECE_MS; joined, they play the same footage. */
+function pieces(clips: Clip[]): Clip[] {
+  return clips.flatMap(clip => Array.from({ length: Math.ceil((clip.end_ms - clip.start_ms) / PIECE_MS) }, (_, i) => ({
+    segment: clip.segment, start_ms: clip.start_ms + i * PIECE_MS, end_ms: Math.min(clip.end_ms, clip.start_ms + (i + 1) * PIECE_MS),
+  })));
+}
 
 export async function GET(req: Request) {
   const ctx = await gameContext(req, new URL(req.url).searchParams.get("game_uuid"));
@@ -38,7 +54,7 @@ export async function POST(req: Request) {
   if (!validTarget(body.target_key)) return Response.json({ error: "Invalid highlight." }, { status: 400 });
   const { admin, user, gameUuid, gameRows } = ctx;
   const [kind, id] = body.target_key.split(":");
-  const target: HighlightTarget = kind === "player" ? { player_id: Number(id) } : { team_id: Number(id) };
+  const target: HighlightTarget = kind === "player" ? { player_id: id } : { team_id: id };
 
   const [events, segments] = await Promise.all([
     admin.from("hoop_events").select("team_id, player_id, type, segment, segment_time_ms, reverted").match(gameRows).range(0, 19999),
@@ -46,8 +62,11 @@ export async function POST(req: Request) {
   ]);
   if (events.error || segments.error) return Response.json({ error: (events.error ?? segments.error)!.message }, { status: 500 });
   const clipEvents = (events.data as Array<Omit<ClipEvent, "reverted"> & { reverted: boolean }>).map(e => ({ ...e, reverted: e.reverted ? 1 : 0 }));
-  const clips = highlightClips(clipEvents, segments.data, target);
+  const merged = highlightClips(clipEvents, segments.data, target);
+  const clips = pieces(merged);
   if (clips.length === 0) return Response.json({ error: "No plays for this selection." }, { status: 422 });
+  const totalMs = clips.reduce((sum, c) => sum + c.end_ms - c.start_ms, 0);
+  if (totalMs > MAX_HIGHLIGHT_MS) return Response.json({ error: "This highlight is too long to cut in the cloud." }, { status: 422 });
   const bySequence = new Map(segments.data.map(s => [s.sequence, s]));
   const missing = [...new Set(clips.map(c => c.segment))].filter(n => bySequence.get(n)?.upload_status !== "uploaded");
   if (missing.length) return Response.json({ error: "Some recordings are not uploaded yet.", missing }, { status: 409 });
@@ -63,19 +82,25 @@ export async function POST(req: Request) {
   try {
     for (const [i, clip] of clips.entries()) {
       if (cached[i] || Date.now() + CLIP_COST_MS > deadline) continue;
+      if (!(await reserveUsage(admin, user.id, "highlight_cut_seconds", (clip.end_ms - clip.start_ms) / 1000, DAILY_CUT_SECONDS))) {
+        return Response.json({ error: "Daily cloud highlight limit reached. Try again tomorrow." }, { status: 429 });
+      }
       const out = path.join(dir, `clip-${i}.mp4`);
+      // A piece that overruns its share is killed rather than holding the function to its limit.
       await run(ffmpegPath!, [
         "-v", "error", "-ss", String(clip.start_ms / 1000), "-t", String((clip.end_ms - clip.start_ms) / 1000),
         ...UNTRUSTED_INPUT, "-i", await presign("GET", footageKey(gameUuid, clip.segment)),
         "-vf", "scale=-2:720", "-r", "30", "-c:v", "libx264", "-preset", "veryfast", "-b:v", "5M",
         "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2", out,
-      ]);
+      ], { timeout: CLIP_COST_MS * 2, killSignal: "SIGKILL" });
       await call("PUT", clipKey(clip), { body: await readFile(out), headers: { "content-type": "video/mp4" } });
       await rm(out, { force: true });
       cached[i] = true;
     }
     const done = cached.filter(Boolean).length;
-    if (done < clips.length) return Response.json({ status: "cutting", done, total: clips.length }, { status: 202 });
+    if (done < clips.length || Date.now() + JOIN_COST_MS > deadline + (maxDuration * 1000 - CUT_BUDGET_MS)) {
+      return Response.json({ status: "cutting", done, total: clips.length }, { status: 202 });
+    }
 
     const parts: string[] = [];
     for (const [i, clip] of clips.entries()) {
@@ -86,14 +111,14 @@ export async function POST(req: Request) {
     const list = path.join(dir, "list.txt");
     await writeFile(list, parts.map(p => `file '${p}'`).join("\n"));
     const joined = path.join(dir, "highlight.mp4");
-    await run(ffmpegPath!, ["-v", "error", "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", "-movflags", "+faststart", joined]);
+    await run(ffmpegPath!, ["-v", "error", "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", "-movflags", "+faststart", joined], { timeout: 60_000, killSignal: "SIGKILL" });
 
     const highlightId = randomUUID();
     const objectKey = `highlights/${gameUuid}/${highlightId}.mp4`;
     await call("PUT", objectKey, { body: await readFile(joined), headers: { "content-type": "video/mp4" } });
     const saved = await saveHighlight(admin, {
       id: highlightId, game_uuid: gameUuid, user_id: user.id, target_key: body.target_key, target_label: String(body.target_label ?? "").slice(0, 120),
-      source: "cloud", object_key: objectKey, duration_ms: clips.reduce((sum, c) => sum + c.end_ms - c.start_ms, 0), clip_count: clips.length,
+      source: "cloud", object_key: objectKey, duration_ms: totalMs, clip_count: merged.length,
       created_at: new Date().toISOString(),
     });
     await Promise.all(clips.map(clip => call("DELETE", clipKey(clip)).catch(() => {})));

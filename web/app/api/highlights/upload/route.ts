@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import ffmpegPath from "ffmpeg-static";
-import { call, exists, presign } from "@/lib/r2";
+import { call, presign } from "@/lib/r2";
+import { reserveUsage } from "../../login/shared";
 import { gameContext, saveHighlight, UNTRUSTED_INPUT, validTarget } from "../shared";
 
 export const dynamic = "force-dynamic";
@@ -29,12 +30,23 @@ async function faststart(key: string) {
 }
 
 const objectKey = (gameUuid: string, id: string) => `highlights/${gameUuid}/${id}.mp4`;
+/** Largest phone highlight accepted; a presigned PUT cannot cap the size, so it is checked after upload. */
+const MAX_HIGHLIGHT_BYTES = 1024 * 1024 * 1024;
+/** Upload URLs one user may request per day. */
+const DAILY_UPLOADS = 100;
 
 /** POST {game_uuid} → {id, put_url}: a fresh object to upload the mp4 to. */
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const ctx = await gameContext(req, body.game_uuid, { write: true });
   if ("error" in ctx) return ctx.error;
+  try {
+    if (!(await reserveUsage(ctx.admin, ctx.user.id, "highlight_upload", 1, DAILY_UPLOADS))) {
+      return Response.json({ error: "Daily highlight upload limit reached. Try again tomorrow." }, { status: 429 });
+    }
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "Could not start the upload." }, { status: 500 });
+  }
   const id = randomUUID();
   return Response.json({ id, put_url: await presign("PUT", objectKey(ctx.gameUuid, id)) });
 }
@@ -47,7 +59,12 @@ export async function PUT(req: Request) {
   const { admin, user, gameUuid } = ctx;
   if (typeof body.id !== "string" || !/^[0-9a-f-]{36}$/.test(body.id) || !validTarget(body.target_key)) return Response.json({ error: "Invalid highlight." }, { status: 400 });
   const key = objectKey(gameUuid, body.id);
-  if (!(await exists(key))) return Response.json({ error: "The video has not been uploaded." }, { status: 409 });
+  const head = await call("HEAD", key);
+  if (!head.ok) return Response.json({ error: "The video has not been uploaded." }, { status: 409 });
+  if (Number(head.headers.get("content-length")) > MAX_HIGHLIGHT_BYTES) {
+    await call("DELETE", key).catch(() => {});
+    return Response.json({ error: "The video is too large." }, { status: 413 });
+  }
   try {
     await faststart(key);
   } catch (error) {

@@ -9,20 +9,21 @@ export type HighlightRow = {
 
 /**
  * The caller and their admin client once they are signed in and can see the game, or the error response.
- * `write` also requires the owner or editor role, matching the segments RLS the admin client bypasses.
+ * `write` also requires the owner or editor role, `owner` the owner role (the admin client bypasses RLS).
  */
-export async function gameContext(req: Request, gameUuid: unknown, { write = false } = {}) {
+export async function gameContext(req: Request, gameUuid: unknown, { write = false, owner: ownerOnly = false } = {}) {
   const { user, admin, asUser } = await caller(req);
   if (!user) return { error: Response.json({ error: "Sign in first." }, { status: 401 }) };
-  if (typeof gameUuid !== "string" || !/^[\w-]{1,64}$/.test(gameUuid)) return { error: Response.json({ error: "Invalid game." }, { status: 400 }) };
-  const { data: game } = await asUser.from("hoop_accessible_games").select("uuid_id, access_role").eq("uuid_id", gameUuid).maybeSingle();
+  if (!isUuid(gameUuid)) return { error: Response.json({ error: "Invalid game." }, { status: 400 }) };
+  const { data: game } = await asUser.from("hoop_accessible_games").select("id, access_role").eq("id", gameUuid).maybeSingle();
   if (!game) return { error: Response.json({ error: "Game not found." }, { status: 404 }) };
   if (write && game.access_role !== "owner" && game.access_role !== "editor") return { error: Response.json({ error: "You can only view this game." }, { status: 403 }) };
-  // Synced events and segments carry the owner's device-local game id, not the game uuid
-  // (events.game_uuid_id was only backfilled once), so rows are found by owner + space + local id.
-  const { data: owner } = await admin.from("hoop_games").select("user_id, sync_space, local_id").eq("uuid_id", gameUuid).single();
+  // Recordings belong to the owner: editors may not create or replace segments (as the segments trigger enforces).
+  if (ownerOnly && game.access_role !== "owner") return { error: Response.json({ error: "Only the game owner can upload recordings." }, { status: 403 }) };
+  // Events and segments reference games.id; the owner tuple keeps the match on the owner's rows.
+  const { data: owner } = await admin.from("hoop_games").select("user_id, sync_space").eq("id", gameUuid).single();
   if (!owner) return { error: Response.json({ error: "Game not found." }, { status: 404 }) };
-  const gameRows = { user_id: owner.user_id, sync_space: owner.sync_space, game_id: owner.local_id };
+  const gameRows = { user_id: owner.user_id, sync_space: owner.sync_space, game_id: gameUuid };
   return { user, admin, asUser, gameUuid, gameRows };
 }
 
@@ -35,8 +36,16 @@ export const footageKey = (gameUuid: string, sequence: number) => `footage/${gam
  */
 export const UNTRUSTED_INPUT = ["-protocol_whitelist", "https,tls,tcp", "-f", "mov"];
 
+const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+
+/** A lowercase canonical UUID (games.id, row ids). */
+export function isUuid(value: unknown): value is string {
+  return typeof value === "string" && new RegExp(`^${UUID}$`).test(value);
+}
+
+/** `player:<uuid>` or `team:<uuid>`. */
 export function validTarget(key: unknown): key is string {
-  return typeof key === "string" && /^(player|team):[0-9]+$/.test(key);
+  return typeof key === "string" && new RegExp(`^(player|team):${UUID}$`).test(key);
 }
 
 type Admin = Awaited<ReturnType<typeof caller>>["admin"];

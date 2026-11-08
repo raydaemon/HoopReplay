@@ -28,7 +28,7 @@ export async function GET(request: Request) {
       persistSession: false,
     },
   });
-  const { error } = await supabase.from("hoop_teams").select("local_id").limit(1);
+  const { error } = await supabase.from("hoop_teams").select("id").limit(1);
 
   if (error) {
     console.error("Supabase keep-alive query failed", error);

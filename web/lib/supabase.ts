@@ -16,6 +16,8 @@ const freshReadFetch: typeof fetch = (input, init) => {
 };
 
 export const supabase = isConfigured ? createClient(url, key, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  // PKCE only: supabase-js then installs a session from the URL only for a `?code=` this browser
+  // started (its verifier is in storage), never tokens from a fragment someone else crafted.
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" },
   global: { fetch: freshReadFetch, headers: { "x-sync-space": syncSpace } }
 }) : null;
