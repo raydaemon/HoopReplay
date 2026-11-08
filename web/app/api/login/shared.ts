@@ -152,10 +152,10 @@ export async function mintSession({ email, name }: { email: string; name: string
   // address was switched to this one is taken over too, never just re-marked as proven.
   const takeOver = !created.data.user && existing
     && !(existing.app_metadata?.oauth_claimed === true && existing.app_metadata?.email_proven === true);
+  // Every cleanup step runs before the account is marked claimed, so a failure midway leaves it
+  // unclaimed and the next sign-in repeats the whole takeover instead of skipping it.
   if (takeOver) {
-    const reset = await admin.auth.admin.updateUserById(existing.id, {
-      password: randomUUID() + randomUUID(), email_confirm: true, app_metadata: { ...existing.app_metadata, ...proven },
-    });
+    const reset = await admin.auth.admin.updateUserById(existing.id, { password: randomUUID() + randomUUID(), email_confirm: true });
     if (reset.error) throw new Error(reset.error.message);
     // Provider identities for other addresses (the previous holder's own Google/Apple) go as well.
     const dropped = await admin.rpc("hoop_drop_foreign_identities", { p_user: existing.id, p_email: email });
@@ -167,6 +167,8 @@ export async function mintSession({ email, name }: { email: string; name: string
   if (takeOver) {
     const revoked = await admin.auth.admin.signOut(data.session.access_token, "others");
     if (revoked.error) throw new Error(revoked.error.message);
+    const claimed = await admin.auth.admin.updateUserById(existing.id, { app_metadata: { ...existing.app_metadata, ...proven } });
+    if (claimed.error) throw new Error(claimed.error.message);
   }
   return { session: data.session, user: data.user };
 }
