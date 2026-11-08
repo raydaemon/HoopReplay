@@ -12,7 +12,8 @@ const PART_SIZE = 16 * 1024 * 1024;
 function segmentInput(body: Record<string, unknown>) {
   const sequence = Number(body.sequence);
   const size = Number(body.size);
-  return Number.isInteger(sequence) && sequence > 0 && Number.isFinite(size) && size > 0 ? { sequence, size } : null;
+  // S3 allows at most 10,000 parts; a larger claimed size would only make us presign URLs in a loop.
+  return Number.isInteger(sequence) && sequence > 0 && Number.isFinite(size) && size > 0 && size <= PART_SIZE * 10_000 ? { sequence, size } : null;
 }
 
 /** Parts R2 already holds for this upload (number → ETag), or null when the upload id is unknown or expired. */
