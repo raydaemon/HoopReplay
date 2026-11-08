@@ -1,0 +1,2 @@
+-- Remote history compatibility entry. The schema change is defined in
+-- 20260809073022_allow_starter_and_link_event_segments.sql.
