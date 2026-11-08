@@ -1,0 +1,17 @@
+.DS_Store
+node_modules/
+.env
+.env.*
+!.env.example
+build/
+.gradle/
+local.properties
+DerivedData/
+xcuserdata/
+data/users.csv
+.next/
+*.tsbuildinfo
+next-env.d.ts
+*.apk
+*.aab
+HoopReplay-ios.app/
