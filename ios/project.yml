@@ -1,0 +1,83 @@
+name: HoopReplay
+options:
+  bundleIdPrefix: com.hoopreplay
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  HoopReplay:
+    type: application
+    platform: iOS
+    sources:
+      - HoopReplay
+      # The interface-language catalog is shared with the Web app; the folder lands in the bundle as i18n/<code>.json.
+      - path: ../web/i18n
+        name: i18n
+        type: folder
+        buildPhase: resources
+    entitlements:
+      path: HoopReplay/HoopReplay.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
+    info:
+      path: HoopReplay/Info.plist
+      properties:
+        CFBundleShortVersionString: "6.10.2901"
+        CFBundleVersion: "6102901"
+        ITSAppUsesNonExemptEncryption: false
+        HOOPREPLAY_SUPABASE_URL: "$(HOOPREPLAY_SUPABASE_URL)"
+        HOOPREPLAY_SUPABASE_ANON_KEY: "$(HOOPREPLAY_SUPABASE_ANON_KEY)"
+        HOOPREPLAY_SYNC_SPACE: "$(HOOPREPLAY_SYNC_SPACE)"
+        HOOPREPLAY_WEB_URL: "https://hoopreplay-tawny.vercel.app/"
+        CFBundleURLTypes:
+          - CFBundleURLName: com.hoopreplay.ios
+            CFBundleURLSchemes: [hoopreplay]
+        NSCameraUsageDescription: "HoopReplay records game video with the camera."
+        NSMicrophoneUsageDescription: "HoopReplay records game audio with the microphone."
+        NSPhotoLibraryAddUsageDescription: "HoopReplay saves finished game recordings to your Photos library."
+        NSPhotoLibraryUsageDescription: "HoopReplay reads your game recordings from Photos to cut player and team highlight videos."
+        UILaunchScreen: {}
+        UIRequiresFullScreen: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hoopreplay.ios
+        PRODUCT_NAME: HoopReplay
+        DEVELOPMENT_TEAM: 538QL62JD5
+        CODE_SIGNING_ALLOWED: YES
+        SWIFT_VERSION: 5.0
+        TARGETED_DEVICE_FAMILY: "1,2"
+  HoopReplayTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [HoopReplayTests]
+    dependencies:
+      - target: HoopReplay
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hoopreplay.ios.tests
+        SWIFT_VERSION: 5.0
+        CODE_SIGNING_ALLOWED: YES
+        DEVELOPMENT_TEAM: 538QL62JD5
+        GENERATE_INFOPLIST_FILE: YES
+  HoopReplayUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [HoopReplayUITests]
+    dependencies:
+      - target: HoopReplay
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hoopreplay.ios.uitests
+        SWIFT_VERSION: 5.0
+        DEVELOPMENT_TEAM: 538QL62JD5
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  HoopReplay:
+    build:
+      targets:
+        HoopReplay: all
+        HoopReplayTests: [test]
+        HoopReplayUITests: [test]
+    test:
+      targets:
+        - HoopReplayTests
+        - HoopReplayUITests

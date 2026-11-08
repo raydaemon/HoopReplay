@@ -1,0 +1,220 @@
+{
+  "segments": [
+    {
+      "sequence": 1,
+      "duration_ms": 60000
+    },
+    {
+      "sequence": 2,
+      "duration_ms": 30000
+    }
+  ],
+  "events": [
+    {
+      "team_id": 1,
+      "player_id": 10,
+      "type": "PTS_2",
+      "segment": 1,
+      "segment_time_ms": 5000,
+      "reverted": 0
+    },
+    {
+      "team_id": 1,
+      "player_id": 11,
+      "type": "AST",
+      "segment": 1,
+      "segment_time_ms": 5000,
+      "reverted": 0
+    },
+    {
+      "team_id": 1,
+      "player_id": 10,
+      "type": "REB",
+      "segment": 1,
+      "segment_time_ms": 20000,
+      "reverted": 0
+    },
+    {
+      "team_id": 1,
+      "player_id": 10,
+      "type": "PTS_3",
+      "segment": 1,
+      "segment_time_ms": 23000,
+      "reverted": 0
+    },
+    {
+      "team_id": 1,
+      "player_id": 10,
+      "type": "MISS_2",
+      "segment": 1,
+      "segment_time_ms": 40000,
+      "reverted": 0
+    },
+    {
+      "team_id": 1,
+      "player_id": 10,
+      "type": "PTS_2",
+      "segment": 1,
+      "segment_time_ms": 59000,
+      "reverted": 0
+    },
+    {
+      "team_id": 1,
+      "player_id": 10,
+      "type": "PTS_2",
+      "segment": 1,
+      "segment_time_ms": 50000,
+      "reverted": 1
+    },
+    {
+      "team_id": 1,
+      "player_id": 12,
+      "type": "FT_MADE",
+      "segment": 2,
+      "segment_time_ms": 12000,
+      "reverted": 0
+    },
+    {
+      "team_id": 1,
+      "player_id": 12,
+      "type": "ADJ",
+      "segment": 2,
+      "segment_time_ms": 25000,
+      "reverted": 0
+    },
+    {
+      "team_id": 1,
+      "player_id": 10,
+      "type": "PTS_1",
+      "segment": 0,
+      "segment_time_ms": 0,
+      "reverted": 0
+    },
+    {
+      "team_id": 1,
+      "player_id": 10,
+      "type": "STL",
+      "segment": 9,
+      "segment_time_ms": 1000,
+      "reverted": 0
+    },
+    {
+      "team_id": 2,
+      "player_id": 20,
+      "type": "PTS_2",
+      "segment": 2,
+      "segment_time_ms": 4000,
+      "reverted": 0
+    },
+    {
+      "team_id": 2,
+      "player_id": 20,
+      "type": "BLK",
+      "segment": 2,
+      "segment_time_ms": 14000,
+      "reverted": 0
+    },
+    {
+      "team_id": 2,
+      "player_id": 21,
+      "type": "PTS_3",
+      "segment": 2,
+      "segment_time_ms": 45000,
+      "reverted": 0
+    },
+    {
+      "team_id": 2,
+      "player_id": 21,
+      "type": "PTS_2",
+      "segment": 2,
+      "segment_time_ms": 20000,
+      "reverted": 0
+    }
+  ],
+  "cases": [
+    {
+      "name": "player clips are clamped, merged, ordered, and skip misses, reverts and missing footage",
+      "target": {
+        "player_id": 10
+      },
+      "clips": [
+        {
+          "segment": 1,
+          "start_ms": 0,
+          "end_ms": 7000
+        },
+        {
+          "segment": 1,
+          "start_ms": 12000,
+          "end_ms": 25000
+        },
+        {
+          "segment": 1,
+          "start_ms": 51000,
+          "end_ms": 60000
+        }
+      ]
+    },
+    {
+      "name": "team clips are scoring plays only, without adjustments",
+      "target": {
+        "team_id": 1
+      },
+      "clips": [
+        {
+          "segment": 1,
+          "start_ms": 0,
+          "end_ms": 7000
+        },
+        {
+          "segment": 1,
+          "start_ms": 15000,
+          "end_ms": 25000
+        },
+        {
+          "segment": 1,
+          "start_ms": 51000,
+          "end_ms": 60000
+        },
+        {
+          "segment": 2,
+          "start_ms": 4000,
+          "end_ms": 14000
+        }
+      ]
+    },
+    {
+      "name": "touching windows merge and blocks count for a player",
+      "target": {
+        "player_id": 20
+      },
+      "clips": [
+        {
+          "segment": 2,
+          "start_ms": 0,
+          "end_ms": 16000
+        }
+      ]
+    },
+    {
+      "name": "a target with no plays has no clips",
+      "target": {
+        "player_id": 99
+      },
+      "clips": []
+    },
+    {
+      "name": "a play stamped past the end of its recording is skipped",
+      "target": {
+        "player_id": 21
+      },
+      "clips": [
+        {
+          "segment": 2,
+          "start_ms": 12000,
+          "end_ms": 22000
+        }
+      ]
+    }
+  ]
+}

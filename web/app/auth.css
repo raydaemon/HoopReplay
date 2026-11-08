@@ -1,0 +1,14 @@
+.modalBackdrop { position: fixed; inset: 0; z-index: 20; background: #f5f6f8e8; display: grid; place-items: center; padding: 20px; backdrop-filter: blur(8px); }
+.authModal { width: min(420px, 100%); padding: 24px; display: flex; flex-direction: column; gap: 14px; }
+.authModal h2, .authModal p { margin: 0; }
+.authModal p, .authModal label { color: var(--muted); }
+.authHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.authHeading > button { font-size: 22px; line-height: 1; padding: 5px 9px; }
+.authTabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); }
+.authTabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); }
+.authTabs button.active { border-bottom-color: var(--orange); color: var(--white); }
+.authModal label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.authModal input { background: #fff; border: 1px solid var(--line); color: var(--white); border-radius: 8px; padding: 11px; }
+.authModal small { color: var(--muted); }
+.authError { color: #a52535; background: #fff0f2; font-size: 13px; }
+.accountEmail { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--white); }

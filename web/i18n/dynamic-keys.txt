@@ -1,0 +1,140 @@
+# Keys reached through variables; scripts/i18n-keys.py merges these into en.json.
+# score-mode / scoring-team-panel
+Rebound
+Assist
+Steal
+Block
+Turnover
+Away
+Home
+# score-dialogs defaults and option labels
+Set Starting Lineup
+Tap players to switch starters and substitutes
+Starter
+Substitute
+Confirm
+No assist
+1 FT
+2 FTs
+3 FTs
+1+1
+Numbers
+Names
+# access role badges: titleCase(role); Editor/Viewer are already static keys
+Owner
+# games/[id] playLabel(type)
+2PT made
+3PT made
+FT made
+FT missed
+2PT missed
+3PT missed
+REB
+AST
+STL
+BLK
+TOV
+Foul
+Foul drawn
+Sub in
+Sub out
+Score adjustment
+Substitution
+# titleCase(game.status)
+Draft
+Ready
+Recording
+Paused
+Processing
+Completed
+Failed
+Error
+# titleCase(video_quality)
+Highest
+Uhd
+Fhd
+Hd
+Sd
+# games list filters / play filters
+All
+Active
+Scoring
+Fouls
+Subs
+# lib/dashboard statusLabel + page.tsx scoreboard status
+Upcoming
+Live
+Final
+# page.tsx eventLabel(type)
+2-point field goal made
+3-point field goal made
+2-point field goal missed
+3-point field goal missed
+Free throw made
+Free throw missed
+Substitution out
+Substitution in
+# page.tsx stat buttons / KPI / nav
+2 Points
+3 Points
+Free Throw
+Teams
+Players
+Total Games
+Active / Upcoming
+Recorded Plays
+Dashboard
+Games
+Clubs
+Stats
+Import
+Settings
+# app-header sync status / notices / confirm labels
+Connecting…
+Setup required
+Syncing…
+Synced
+Sync failed
+Local only — sign in to sync
+Saving…
+Save failed
+Import failed
+Recording now
+Live · paused
+Delete
+OK
+# android eventLabel()/status helpers
+Recording saved
+# ios eventShortLabel()
+Adjust
+Video {clock}
+Recording saved ({clock})
+# android syncMessage values (stored English, translated at display)
+Signed out
+Add Supabase URL, publishable key, and sync space to Gradle properties
+Download complete
+Upload complete
+Sync complete
+Download failed: {message}
+Upload failed: {message}
+Import failed: {message}
+Sign in failed: {message}
+Check your email to confirm the account, then sign in
+# android statusLabel() for statuses synced from Web
+In Progress
+Scheduled
+Not Recording
+Finalized
+# android VideoQualityOptions labels
+Device maximum
+4K · Largest file
+1080p · Recommended
+720p · Smaller file
+480p · Smallest file
+# ios syncMessage / list messages
+Account deleted
+Add Supabase URL, publishable key, and sync space to the build settings
+This team is used in a game and cannot be deleted
+Off
+Wi-Fi only
+Always

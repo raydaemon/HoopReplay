@@ -1,0 +1,81 @@
+/*
+ * Tailwind for the shadcn/ui components. Preflight is deliberately left out: the dashboard at
+ * app/page.tsx is styled by hand in globals.css, and Tailwind's reset would strip that styling.
+ * The base rules below are the small part of preflight the utilities genuinely depend on.
+ */
+@layer legacy, theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+/*
+ * The hand-written dashboard styles live in a layer below Tailwind's, so a utility class always
+ * wins over a bare `button`/`input` element rule instead of losing to it for being layered.
+ */
+@import "./globals.css" layer(legacy);
+@import "./auth.css" layer(legacy);
+
+@source "../app";
+@source "../components";
+@source "../lib";
+
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border: 0 solid;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted-bg);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/*
+ * The light theme from AGENTS.md: off-white page, white cards, dark text, orange reserved for
+ * primary actions and accents. Names are prefixed where they would collide with globals.css.
+ */
+:root {
+  --radius: 0.625rem;
+  --background: #f5f6f8;
+  --foreground: #171a1f;
+  --card: #ffffff;
+  --card-foreground: #171a1f;
+  --popover: #ffffff;
+  --popover-foreground: #171a1f;
+  --primary: #ff6b00;
+  --primary-foreground: #17100b;
+  --secondary: #eceff3;
+  --secondary-foreground: #171a1f;
+  --muted-bg: #f2f4f7;
+  --muted-foreground: #69717d;
+  --accent: #fff1e7;
+  --accent-foreground: #b84d00;
+  --destructive: #b3261e;
+  --destructive-foreground: #ffffff;
+  --border: #d9dde3;
+  --input: #d9dde3;
+  --ring: #ff6b00;
+}
